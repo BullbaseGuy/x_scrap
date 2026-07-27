@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field, is_dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any, Mapping
+from typing import Any
 
-UTC = timezone.utc
+UTC = UTC
 
 
 class JobStatus(StrEnum):
@@ -118,7 +119,7 @@ class UserSnapshot:
     raw: dict[str, Any] = field(repr=False)
 
     @classmethod
-    def from_object(cls, value: Any) -> "UserSnapshot":
+    def from_object(cls, value: Any) -> UserSnapshot:
         data = object_mapping(value)
         user_id = _id(data.get("user_id", data.get("id_str", data.get("id"))))
         username = str(data.get("username") or data.get("screen_name") or "").lstrip("@")
@@ -165,7 +166,7 @@ class PostRecord:
     raw: dict[str, Any] = field(repr=False)
 
     @classmethod
-    def from_object(cls, value: Any, *, source: str) -> "PostRecord":
+    def from_object(cls, value: Any, *, source: str) -> PostRecord:
         data = object_mapping(value)
         user = data.get("user") or {}
         if not isinstance(user, Mapping):

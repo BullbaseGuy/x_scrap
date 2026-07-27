@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
-from datetime import datetime, timezone
+from collections.abc import AsyncIterator, Callable
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from x_scrap.adapters.base import (
     AuthRequired,
@@ -32,7 +32,7 @@ from x_scrap.runtime.retry import RetryPolicy
 from x_scrap.storage.database import Database
 from x_scrap.storage.raw_store import RawStore
 
-UTC = timezone.utc
+UTC = UTC
 EARLIEST_X = datetime(2006, 3, 21, tzinfo=UTC)
 
 

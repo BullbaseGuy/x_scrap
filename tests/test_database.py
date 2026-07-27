@@ -1,10 +1,11 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fakes import post
+
 from x_scrap.domain.models import PostRecord
 from x_scrap.storage.database import Database
 
-UTC = timezone.utc
+UTC = UTC
 
 
 def test_post_upsert_is_idempotent_and_merges_sources(tmp_path):

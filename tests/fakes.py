@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
-UTC = timezone.utc
+UTC = UTC
 
 
 def user(username: str = "alice", user_id: int = 7, created: datetime | None = None) -> dict[str, Any]:

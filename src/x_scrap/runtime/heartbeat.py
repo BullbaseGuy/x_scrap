@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 from contextlib import suppress
 
 
@@ -19,7 +19,7 @@ class Heartbeat:
         self._emit = emit
         self._task: asyncio.Task[None] | None = None
 
-    async def __aenter__(self) -> "Heartbeat":
+    async def __aenter__(self) -> Heartbeat:
         self._task = asyncio.create_task(self._run())
         return self
 

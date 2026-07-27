@@ -4,9 +4,9 @@ import argparse
 import asyncio
 import getpass
 import json
-from datetime import datetime, timezone
+from collections.abc import Sequence
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Sequence
 
 from x_scrap.adapters.twscrape_adapter import TwscrapeAdapter
 from x_scrap.config import AppPaths
@@ -96,7 +96,7 @@ def _parse_cli_datetime(value: str | None) -> datetime | None:
     parsed = parse_datetime(value)
     if parsed is None:
         raise SystemExit(f"invalid ISO-8601 datetime: {value}")
-    return parsed.astimezone(timezone.utc)
+    return parsed.astimezone(UTC)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

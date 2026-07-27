@@ -72,7 +72,7 @@ class TaskState:
     human_required: bool
 
     @classmethod
-    def from_mapping(cls, data: dict[str, Any]) -> "TaskState":
+    def from_mapping(cls, data: dict[str, Any]) -> TaskState:
         if _require(data, "schema_version", int) != 2:
             raise StateError("task schema_version must equal 2")
         _require(data, "state_revision", int)

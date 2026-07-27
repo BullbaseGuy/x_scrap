@@ -1,9 +1,10 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fakes import post, user
+
 from x_scrap.domain.models import PostRecord, UserSnapshot
 
-UTC = timezone.utc
+UTC = UTC
 
 
 def test_normalizes_ids_as_strings_and_relations():

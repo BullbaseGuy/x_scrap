@@ -1,8 +1,8 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from x_scrap.harvest.window_planner import build_search_query, make_windows, split_window
 
-UTC = timezone.utc
+UTC = UTC
 
 
 def test_windows_cover_range_without_gaps():
@@ -11,7 +11,7 @@ def test_windows_cover_range_without_gaps():
     windows = make_windows(start, end, days=30)
     assert windows[0].start == start
     assert windows[-1].end == end
-    assert all(a.end == b.start for a, b in zip(windows, windows[1:]))
+    assert all(a.end == b.start for a, b in zip(windows, windows[1:], strict=False))
 
 
 def test_split_preserves_exact_coverage():

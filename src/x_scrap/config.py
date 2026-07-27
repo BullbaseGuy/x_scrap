@@ -21,7 +21,7 @@ class AppPaths:
     home: Path
 
     @classmethod
-    def discover(cls, home: str | Path | None = None) -> "AppPaths":
+    def discover(cls, home: str | Path | None = None) -> AppPaths:
         return cls(Path(home).expanduser() if home else _default_home())
 
     @property
@@ -40,7 +40,7 @@ class AppPaths:
     def raw(self) -> Path:
         return self.home / "raw"
 
-    def ensure(self) -> "AppPaths":
+    def ensure(self) -> AppPaths:
         self.home.mkdir(parents=True, exist_ok=True)
         self.exports.mkdir(parents=True, exist_ok=True)
         self.raw.mkdir(parents=True, exist_ok=True)

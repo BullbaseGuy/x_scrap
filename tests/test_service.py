@@ -1,12 +1,12 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
-
 from fakes import FakeAdapter, post
+
 from x_scrap.service import UserExportService
 from x_scrap.storage.database import Database
 
-UTC = timezone.utc
+UTC = UTC
 
 
 @pytest.mark.asyncio
