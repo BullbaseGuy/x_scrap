@@ -35,15 +35,20 @@ jobs:
           echo '0cdfd8300372afa5fc8bb2fb55cc9025c17e39c79402a6a057be993149835411  /tmp/w04.patch.gz' | sha256sum --check --strict
           gzip --decompress --stdout /tmp/w04.patch.gz > /tmp/w04.patch
           git apply --check --binary /tmp/w04.patch
-          git apply --index --binary /tmp/w04.patch
+          git apply --binary /tmp/w04.patch
           rm -rf .w04-upload .w04-patch .github/workflows/temp-branch-snapshot.yml
-          git add -A
-      - name: Run complete deterministic gate
+      - name: Apply deterministic lint fixes and run complete gate
         shell: bash
         run: |
           set -euo pipefail
           python -m pip install -e '.[dev]'
-          python scripts/devflow/run_gate.py repository-full
+          ruff check --fix src tests scripts
+          ruff check --output-format=concise src tests scripts
+          python -m compileall -q src tests scripts
+          pytest -q --tb=short
+          python scripts/devflow/validate_state.py --all-active --no-git
+          python scripts/devflow/secret_audit.py
+          git add -A
           git diff --check --cached
           test -z "$(git ls-files '.w04-upload/**' '.w04-patch/**' '.github/workflows/temp-branch-snapshot.yml')"
       - name: Commit W04 product changes and remove temporary surface
