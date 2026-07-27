@@ -2,7 +2,7 @@
 
 `x_scrap` is a local-first, resumable, and auditable framework for collecting public data from X.com.
 
-The first milestone exports the currently publicly retrievable posts authored by one public account. It combines the recent user timelines with date-partitioned search, stores progress in SQLite, deduplicates by post ID, and resumes after interruption.
+The first milestone exports the currently publicly retrievable posts authored by one public account. It combines the recent user timelines with date-partitioned search, stores progress in SQLite, preserves page-level JSON evidence, deduplicates by post ID, and resumes after interruption from the next committed cursor.
 
 > [!WARNING]
 > This project uses X's web-facing interfaces through an open-source compatibility adapter rather than a supported free official API. X can change those interfaces without notice, and use may be restricted by X's terms or account controls. Use only accounts and data you are authorized to access. The project does not bypass login challenges, CAPTCHAs, protected accounts, or other access controls.
@@ -15,9 +15,9 @@ Included by default:
 - replies, including self-replies and threads;
 - quote posts;
 - text, timestamps, IDs, relations, metrics, media metadata, and source provenance;
-- a fixed task cutoff, time-window coverage report, and local model artifacts;
+- a fixed task cutoff, time-window coverage report, and content-addressed page evidence;
 - automatic wait/retry for bounded recoverable errors;
-- idempotent resume from the latest unfinished job.
+- idempotent resume from the latest unfinished job and its next committed page cursor.
 
 Not promised as recoverable:
 
@@ -73,11 +73,11 @@ x-scrap user export `
   --max-posts-per-window 5000
 ```
 
-Resume is enabled by default. Re-running the same command reuses the latest unfinished job, its fixed cutoff, completed windows, and deduplicated posts. Use `--no-resume` only when a new independent snapshot is required.
+Resume is enabled by default. Re-running the same command reuses the latest unfinished job, its fixed cutoff, committed pages, next cursor, completed windows, and deduplicated posts. Use `--no-resume` only when a new independent snapshot is required.
 
 ## Output
 
-Each task writes:
+Each task writes normalized exports:
 
 ```text
 exports/<username>/<job_id>/
@@ -89,7 +89,14 @@ exports/<username>/<job_id>/
 └── summary.md
 ```
 
-Local model artifacts are gzip-compressed below `raw/<job_id>/`. Full HTTP page-response preservation is deliberately tracked as a later hardening item; the current artifacts are the adapter-normalized source payloads used to build each post record.
+The corresponding page evidence is stored separately:
+
+```text
+raw/<job_id>/pages/<scope>/
+└── page-<index>-<content-hash>.json.gz
+```
+
+Each gzip file contains only the stable JSON response body returned by the adapter's raw page method. SQLite stores the operation, request cursor, next cursor, page index, capture time, compressed SHA-256, artifact path, and the accepted post IDs linked to that page. Files are content addressed and written atomically, so a rejected retry cannot overwrite already committed evidence. HTTP headers and transport traces are not claimed as preserved.
 
 ## Development workflow
 
