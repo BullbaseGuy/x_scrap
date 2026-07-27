@@ -1,0 +1,292 @@
+name: Temporary Enter W09 Human Gate
+
+on:
+  push:
+    branches:
+      - feature/x-user-timeline-v1
+    paths:
+      - '.github/workflows/temp-enter-w09-human-gate.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: temporary-enter-w09
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      TARGET_BRANCH: feature/x-user-timeline-v1
+      TWS_TELEMETRY: '0'
+      DO_NOT_TRACK: '1'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TARGET_BRANCH }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Verify W07 and W08 publication
+        id: verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          ready=true
+          for path in \
+            docs/implementation/x-user-timeline-v1/W07_result.md \
+            docs/implementation/x-user-timeline-v1/W08_plan.md \
+            docs/implementation/x-user-timeline-v1/W08_result.md; do
+            if ! test -f "$path"; then
+              echo "missing: $path"
+              ready=false
+            fi
+          done
+          echo "ready=${ready}" >> "$GITHUB_OUTPUT"
+      - name: Run full deterministic W08 acceptance gate
+        if: steps.verify.outputs.ready == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -e '.[dev]'
+          python -m compileall -q src tests scripts
+          ruff check src tests scripts
+          count=$(pytest --collect-only -q | tail -n 1 | awk '{print $1}')
+          test "${count}" -ge 83
+          pytest -q
+          python scripts/devflow/validate_state.py --all-active --no-git
+          python scripts/devflow/secret_audit.py
+      - name: Persist W09 local E2E gate
+        if: steps.verify.outputs.ready == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from __future__ import annotations
+
+          import json
+          from datetime import UTC, datetime
+          from pathlib import Path
+
+          task_dir = Path('docs/implementation/x-user-timeline-v1')
+          state_path = task_dir / 'task_state.yaml'
+          active_path = Path('docs/implementation/ACTIVE_TASKS.yaml')
+          state = json.loads(state_path.read_text(encoding='utf-8'))
+          state['state_revision'] = int(state.get('state_revision', 0)) + 1
+          state['status'] = 'WAITING_HUMAN'
+          state['execution_status'] = 'BLOCKED'
+          state['current_stage'] = 'W09'
+          state['last_completed_stage'] = 'W08'
+          state['human_gate'] = {
+              'required': True,
+              'reason': 'W09 requires an authorized local X browser-cookie session and an intentional interruption/resume smoke test; credentials must never be sent to GitHub or chat.',
+              'minimum_action': 'Run the documented W09 PowerShell procedure locally for one small public account and one high-volume public account, interrupt one run after at least one committed page, resume it, and provide the redacted W09 evidence JSON plus coverage summaries.',
+              'resume_from': 'W09 local authenticated E2E evidence review',
+          }
+          state['last_successful_step'] = 'W07 self-verifying export and W08 deterministic recovery matrix passed the full repository gate'
+          state['next_action'] = 'Collect redacted local W09 E2E evidence; then review acceptance, mark the PR ready, merge, and run exact-main post-merge validation'
+          state['updated_at_utc'] = datetime.now(UTC).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
+          state['gate_results'] = {
+              'compile': 'PASS_W08_FINAL',
+              'pytest': 'PASS_83_OR_MORE_W08_FINAL',
+              'ruff': 'PASS_W08_FINAL',
+              'state': 'PASS_W08_FINAL',
+              'secret_audit': 'PASS_W08_FINAL',
+          }
+          state_path.write_text(json.dumps(state, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+          active = json.loads(active_path.read_text(encoding='utf-8'))
+          for task in active['tasks']:
+              if task['task_id'] == 'x-user-timeline-v1':
+                  task['status'] = 'WAITING_HUMAN'
+                  task['current_stage'] = 'W09'
+                  task['pull_request'] = 2
+          active_path.write_text(json.dumps(active, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+          PY
+          cat > docs/implementation/x-user-timeline-v1/W09_plan.md <<'EOF'
+          # W09 plan — Authorized local live E2E
+
+          1. Use only a browser session owned and authorized by the operator; do not place Cookie values in chat, GitHub, shell history, logs, or artifacts.
+          2. Install the branch locally with Python 3.12 and place `X_SCRAP_HOME` outside the Git worktree.
+          3. Add the session through the no-echo `x-scrap auth add-cookie --label primary` prompt and confirm `auth list` returns redacted metadata only.
+          4. Export one small public account to source exhaustion and validate the bundle inventory, checksums, coverage, JSONL/CSV identity, raw-page evidence, and event redaction.
+          5. Start one higher-volume public-account export, wait until at least one page and cursor checkpoint are committed, terminate the process, then rerun the identical command and confirm it resumes from the committed cursor without duplicating posts or pages.
+          6. If a real 429 occurs, confirm the job enters `WAITING_RATE_LIMIT`, records a redacted reset time, waits without consuming transient-root-cause budget, and resumes automatically. Absence of a naturally occurring 429 is recorded as `NOT_OBSERVED`, not fabricated.
+          7. Record account-independent, redacted evidence only: job IDs, commands with usernames optionally anonymized, timestamps, statuses, counts, hashes, coverage summaries, interruption point, resume result, and any source limitation.
+          8. Do not proceed to W10 until both jobs are self-verifying and no unresolved window, source conflict, credential leak, or schema-change condition remains.
+
+          Exit criteria: authorized local evidence demonstrates one complete small-account export and one real process interruption/resume cycle. A natural rate-limit observation is desirable but not mandatory; any account challenge remains `HUMAN_REQUIRED` and is never bypassed.
+          EOF
+          cat > docs/implementation/x-user-timeline-v1/W09_LOCAL_E2E.md <<'EOF'
+          # W09 local E2E procedure (Windows PowerShell)
+
+          ## 1. Prepare an isolated local environment
+
+          ```powershell
+          git clone https://github.com/BullbaseGuy/x_scrap.git
+          cd x_scrap
+          git switch feature/x-user-timeline-v1
+          py -3.12 -m venv .venv
+          .\.venv\Scripts\Activate.ps1
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+          $env:X_SCRAP_HOME = 'D:\x_scrap_runtime'
+          $env:TWS_TELEMETRY = '0'
+          $env:DO_NOT_TRACK = '1'
+          ```
+
+          `D:\x_scrap_runtime` must not be inside the cloned repository.
+
+          ## 2. Add your own browser session without echo
+
+          ```powershell
+          x-scrap auth add-cookie --label primary
+          x-scrap auth list
+          ```
+
+          Paste a one-line Cookie header containing `auth_token` and `ct0` only into the hidden prompt. Never paste it into chat or GitHub.
+
+          ## 3. Complete a small-account export
+
+          ```powershell
+          x-scrap user export --username <SMALL_PUBLIC_USERNAME>
+          x-scrap jobs list
+          ```
+
+          Confirm that the returned output directory contains `manifest.json`, `profile.json`, `tweets.jsonl`, `tweets.csv`, `coverage.json`, `inventory.json`, `errors.jsonl`, and `summary.md`, and that the inventory verification status is `PASS`.
+
+          ## 4. Verify a real interruption and resume
+
+          ```powershell
+          x-scrap user export --username <HIGH_VOLUME_PUBLIC_USERNAME>
+          ```
+
+          After the heartbeat reports at least one committed page, press `Ctrl+C` once. Then rerun the identical command:
+
+          ```powershell
+          x-scrap user export --username <HIGH_VOLUME_PUBLIC_USERNAME>
+          x-scrap jobs list
+          ```
+
+          The job ID and fixed cutoff must be reused. Page and post counts must not reset, and no `(scope, page_index)` or post-ID duplication may appear.
+
+          ## 5. Produce redacted evidence
+
+          Copy `docs/implementation/x-user-timeline-v1/W09_EVIDENCE.template.json` outside the repository, fill only non-secret fields, and share that JSON together with the two `coverage.json` files and the inventory verification summaries. Do not share `accounts.db`, raw Cookie material, local paths containing personal names, or unredacted upstream errors.
+          EOF
+          cat > docs/implementation/x-user-timeline-v1/W09_EVIDENCE.template.json <<'EOF'
+          {
+            "schema_version": "1.0.0",
+            "branch": "feature/x-user-timeline-v1",
+            "small_account": {
+              "username_redacted": true,
+              "job_id": "",
+              "status": "",
+              "coverage_status": "",
+              "post_count": 0,
+              "page_count": 0,
+              "inventory_verification": "",
+              "bundle_hash": "",
+              "started_at_utc": "",
+              "completed_at_utc": ""
+            },
+            "resume_account": {
+              "username_redacted": true,
+              "job_id_before": "",
+              "job_id_after": "",
+              "fixed_cutoff_reused": false,
+              "committed_pages_before_interrupt": 0,
+              "committed_pages_after_resume": 0,
+              "posts_before_interrupt": 0,
+              "posts_after_resume": 0,
+              "duplicate_page_keys": 0,
+              "duplicate_post_ids": 0,
+              "final_status": "",
+              "coverage_status": "",
+              "inventory_verification": ""
+            },
+            "rate_limit": {
+              "observed": false,
+              "status_transition_verified": false,
+              "reset_wait_verified": false,
+              "automatic_resume_verified": false,
+              "note": "Use NOT_OBSERVED when no natural 429 occurred."
+            },
+            "security": {
+              "cookie_in_evidence": false,
+              "authorization_in_logs": false,
+              "account_database_shared": false,
+              "errors_redacted": true
+            },
+            "operator_notes": ""
+          }
+          EOF
+          cat > docs/implementation/x-user-timeline-v1/STATUS.md <<'EOF'
+          # Status
+
+          - Task: `x-user-timeline-v1`
+          - Branch: `feature/x-user-timeline-v1`
+          - Control issue: #1
+          - Draft PR: #2
+          - Current stage: W09
+          - Status: WAITING_HUMAN
+          - Codex calls: 0
+          - Paid API calls: 0
+          - Paid proxy calls: 0
+
+          ## Completed
+
+          - W00 contract, completeness boundary, risks, and master plan.
+          - W01 package, Devflow state, deterministic gates, and permanent read-only CI.
+          - W02 pinned upstream adapter, telemetry shutdown, Cookie validation, redaction, and error classification.
+          - W03 immutable raw-page evidence, atomic page/post/cursor commits, provenance, and migration tests.
+          - W04 no-echo local authentication, Git-worktree refusal, private local modes, and centralized secret redaction.
+          - W05 independently resumable recent timeline scopes and target/range integrity checks.
+          - W06 stable-ID historical search, exact recursive windows, noisy-result filtering, and child-scope resume.
+          - W07 exact cross-layer coverage audit, source-conflict detection, and atomic self-verifying export bundles.
+          - W08 rate-limit/reset-aware waiting, bounded root-cause recovery, cursor-level resume, and deterministic fault matrix.
+          - Full W08 deterministic repository gate passed with at least 83 collected tests.
+
+          ## Human gate
+
+          W09 requires an authorized local X browser-cookie session. Do not send Cookie values, `accounts.db`, passwords, or authorization headers through chat or GitHub.
+
+          Complete `W09_LOCAL_E2E.md` for one small public account and one interrupted/resumed high-volume public account, then provide only the redacted `W09_EVIDENCE` JSON plus coverage and inventory summaries.
+
+          ## Remaining
+
+          - Review W09 evidence and write `W09_result.md`.
+          - Complete W10 acceptance/security documentation.
+          - Mark PR #2 ready, merge, and run exact-main Post-Merge validation.
+          EOF
+          rm -f docs/implementation/x-user-timeline-v1/RECOVERY_STATUS.md
+          python scripts/devflow/validate_state.py --all-active --no-git
+          python scripts/devflow/secret_audit.py
+      - name: Preserve existing checkpoint when recovery was not published
+        if: steps.verify.outputs.ready != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p docs/implementation/x-user-timeline-v1
+          cat > docs/implementation/x-user-timeline-v1/RECOVERY_STATUS.md <<'EOF'
+          # W07/W08 publication recovery
+
+          The reviewed W07/W08 result files were not all present, so the task was not advanced. Resume from the existing canonical W07 checkpoint. No W07 or W08 completion claim is made.
+          EOF
+      - name: Remove temporary surfaces and publish state
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .bootstrap
+          find .github/workflows -maxdepth 1 -type f -name 'temp-*.yml' -delete
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m 'chore: persist verified W09 execution gate'
+          git push origin "HEAD:${TARGET_BRANCH}"
