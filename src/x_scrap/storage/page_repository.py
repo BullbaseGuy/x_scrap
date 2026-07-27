@@ -191,31 +191,36 @@ class PageRepository:
             )
             for post in posts:
                 self._upsert_post(conn, job_id, post, now)
+            next_state = "EXHAUSTED" if page.next_cursor is None else "RUNNING"
             conn.execute(
                 """UPDATE harvest_scopes
-                SET state='RUNNING', next_cursor=?, next_page_index=?, last_error=NULL, updated_at=?
+                SET state=?, next_cursor=?, next_page_index=?, last_error=NULL, updated_at=?
                 WHERE job_id=? AND scope_key=?""",
-                (page.next_cursor, page.page_index + 1, now, job_id, scope_key),
+                (next_state, page.next_cursor, page.page_index + 1, now, job_id, scope_key),
             )
         return True
 
     def complete_scope(self, job_id: str, scope_key: str) -> None:
-        with self.database.connect() as conn:
-            conn.execute(
-                """UPDATE harvest_scopes
-                SET state='COMPLETE', last_error=NULL, updated_at=?
-                WHERE job_id=? AND scope_key=?""",
-                (iso_utc(utc_now()), job_id, scope_key),
-            )
+        self._set_scope_state(job_id, scope_key, "COMPLETE", None)
+
+    def limit_scope(self, job_id: str, scope_key: str, reason: str) -> None:
+        self._set_scope_state(job_id, scope_key, "LIMIT_REACHED", reason)
 
     def fail_scope(self, job_id: str, scope_key: str, error: str) -> None:
+        self._set_scope_state(job_id, scope_key, "FAILED", error)
+
+    def _set_scope_state(
+        self, job_id: str, scope_key: str, state: str, detail: str | None
+    ) -> None:
         with self.database.connect() as conn:
-            conn.execute(
+            result = conn.execute(
                 """UPDATE harvest_scopes
-                SET state='FAILED', last_error=?, updated_at=?
+                SET state=?, last_error=?, updated_at=?
                 WHERE job_id=? AND scope_key=?""",
-                (error, iso_utc(utc_now()), job_id, scope_key),
+                (state, detail, iso_utc(utc_now()), job_id, scope_key),
             )
+            if result.rowcount != 1:
+                raise KeyError(f"unknown harvest scope: {scope_key}")
 
     def list_pages(self, job_id: str, scope_key: str | None = None) -> list[dict[str, Any]]:
         with self.database.connect() as conn:
