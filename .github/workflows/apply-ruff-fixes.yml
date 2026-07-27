@@ -1,0 +1,57 @@
+name: One-time Ruff Fixes
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'scripts/**'
+      - '.github/workflows/apply-ruff-fixes.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      TARGET_BRANCH: ${{ github.event.pull_request.head.ref }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TARGET_BRANCH }}
+      - name: Apply deterministic Ruff fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'ruff>=0.8'
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('tests/test_window_planner.py')
+          text = path.read_text(encoding='utf-8')
+          text = text.replace(
+              'zip(windows, windows[1:])',
+              'zip(windows, windows[1:], strict=False)',
+          )
+          path.write_text(text, encoding='utf-8')
+          PY
+          ruff check --fix src tests scripts
+          ruff check src tests scripts
+      - name: Commit only source and test fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src tests scripts
+          if git diff --cached --quiet; then
+            echo "Ruff-clean tree already present"
+            exit 0
+          fi
+          git commit -m "style: apply deterministic Ruff fixes"
+          git push origin "HEAD:${TARGET_BRANCH}"
