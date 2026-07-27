@@ -1,1 +1,116 @@
 # x_scrap
+
+`x_scrap` is a local-first, resumable, and auditable framework for collecting public data from X.com.
+
+The first milestone exports the currently publicly retrievable posts authored by one public account. It combines the recent user timelines with date-partitioned search, stores progress in SQLite, deduplicates by post ID, and resumes after interruption.
+
+> [!WARNING]
+> This project uses X's web-facing interfaces through an open-source compatibility adapter rather than a supported free official API. X can change those interfaces without notice, and use may be restricted by X's terms or account controls. Use only accounts and data you are authorized to access. The project does not bypass login challenges, CAPTCHAs, protected accounts, or other access controls.
+
+## Current scope
+
+Included by default:
+
+- original posts;
+- replies, including self-replies and threads;
+- quote posts;
+- text, timestamps, IDs, relations, metrics, media metadata, and source provenance;
+- a fixed task cutoff, time-window coverage report, and local model artifacts;
+- automatic wait/retry for bounded recoverable errors;
+- idempotent resume from the latest unfinished job.
+
+Not promised as recoverable:
+
+- deleted, removed, suspended, protected, de-indexed, or search-suppressed content;
+- a complete history of native reposts;
+- content unavailable to the authenticated account;
+- uninterrupted compatibility after X changes its private GraphQL schema.
+
+## Install
+
+Python 3.12 is the supported project runtime.
+
+```powershell
+py -3.12 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -e ".[dev]"
+```
+
+All credentials and collected data are stored outside the repository. The default Windows home is `%LOCALAPPDATA%\x_scrap`. Override it with `X_SCRAP_HOME` or `--home`.
+
+```powershell
+$env:X_SCRAP_HOME = 'D:\x_scrap_data'
+$env:TWS_TELEMETRY = '0'
+```
+
+## Add a browser-cookie session
+
+Open X.com in your own browser, copy the `auth_token` and `ct0` cookie values, then add them locally. Omitting `--cookie` uses a no-echo prompt and is safer than leaving the value in shell history.
+
+```powershell
+x-scrap auth add-cookie --label primary
+x-scrap auth list
+```
+
+The cookie database is never uploaded by the supplied GitHub Actions workflows.
+
+## Export one account
+
+```powershell
+x-scrap user export --username xdevelopers
+```
+
+Explicit historical range and tuning example:
+
+```powershell
+x-scrap user export `
+  --username xdevelopers `
+  --start 2007-01-01T00:00:00Z `
+  --cutoff 2026-07-27T00:00:00Z `
+  --initial-window-days 30 `
+  --min-window-seconds 3600 `
+  --max-posts-per-window 5000
+```
+
+Resume is enabled by default. Re-running the same command reuses the latest unfinished job, its fixed cutoff, completed windows, and deduplicated posts. Use `--no-resume` only when a new independent snapshot is required.
+
+## Output
+
+Each task writes:
+
+```text
+exports/<username>/<job_id>/
+├── manifest.json
+├── profile.json
+├── tweets.jsonl
+├── tweets.csv
+├── coverage.json
+└── summary.md
+```
+
+Local model artifacts are gzip-compressed below `raw/<job_id>/`. Full HTTP page-response preservation is deliberately tracked as a later hardening item; the current artifacts are the adapter-normalized source payloads used to build each post record.
+
+## Development workflow
+
+The repository follows the Devflow conventions derived from `BullbaseGuy/demo-project` and the evidence-based execution discipline used by `tyxq428/ashare_f10_scrapper`:
+
+```text
+Task contract and plan
+        ↓
+Feature branch + Draft PR
+        ↓
+Deterministic tests / state validation / secret audit
+        ↓
+Recoverable failures diagnosed and retried within budget
+        ↓
+Human gate only for credentials, account challenge, or material decision
+        ↓
+Merge only after acceptance and security PASS
+        ↓
+Exact-main post-merge validation
+```
+
+Canonical task state is under `docs/implementation/`. Codex/agent execution and automatic merge are disabled by default.
+
+See [usage](docs/USAGE.md), [architecture](docs/architecture/ARCHITECTURE.md), and [Task #1](https://github.com/BullbaseGuy/x_scrap/issues/1).
