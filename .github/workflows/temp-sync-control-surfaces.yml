@@ -1,0 +1,157 @@
+name: Temporary Sync Control Surfaces
+
+on:
+  push:
+    branches:
+      - feature/x-user-timeline-v1
+    paths:
+      - '.github/workflows/temp-sync-control-surfaces.yml'
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: temporary-sync-control-surfaces
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TARGET_BRANCH: feature/x-user-timeline-v1
+      GH_TOKEN: ${{ github.token }}
+      TWS_TELEMETRY: '0'
+      DO_NOT_TRACK: '1'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TARGET_BRANCH }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Read canonical status and validate repository
+        id: state
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -e '.[dev]'
+          python -m compileall -q src tests scripts
+          ruff check src tests scripts
+          pytest -q
+          python scripts/devflow/validate_state.py --all-active --no-git
+          python scripts/devflow/secret_audit.py
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          from pathlib import Path
+          state = json.loads(Path('docs/implementation/x-user-timeline-v1/task_state.yaml').read_text())
+          ready = (
+              state.get('current_stage') == 'W09'
+              and state.get('last_completed_stage') == 'W08'
+              and state.get('status') == 'WAITING_HUMAN'
+              and state.get('human_gate', {}).get('required') is True
+              and Path('docs/implementation/x-user-timeline-v1/W07_result.md').is_file()
+              and Path('docs/implementation/x-user-timeline-v1/W08_result.md').is_file()
+          )
+          print(f"ready={'true' if ready else 'false'}")
+          print(f"stage={state.get('current_stage')}")
+          print(f"status={state.get('status')}")
+          print(f"last_completed={state.get('last_completed_stage')}")
+          print(f"codex_calls={state.get('metrics', {}).get('codex_calls', 0)}")
+          PY
+      - name: Synchronize PR and Issue
+        shell: bash
+        env:
+          READY: ${{ steps.state.outputs.ready }}
+          STAGE: ${{ steps.state.outputs.stage }}
+          STATUS: ${{ steps.state.outputs.status }}
+          LAST_COMPLETED: ${{ steps.state.outputs.last_completed }}
+          CODEX_CALLS: ${{ steps.state.outputs.codex_calls }}
+        run: |
+          set -euo pipefail
+          if [ "$READY" = true ]; then
+            cat > /tmp/pr-body.md <<'EOF'
+          ## Goal
+
+          Build the first product slice of `x_scrap`: a local-first, zero-paid-API-cost, resumable and auditable collector for posts authored by one public X account.
+
+          ## Confirmed boundaries
+
+          - Python 3.12 and `twscrape==0.19.2` behind an adapter
+          - local no-echo browser-cookie session only; no credentials in GitHub or chat
+          - recent timelines plus stable-ID, recursively partitioned historical search
+          - raw-page evidence, atomic cursor checkpoints, deterministic recovery, and self-verifying exports
+          - no paid X API, paid proxy, purchased accounts, CAPTCHA bypass, or email automation
+          - Codex disabled; calls remain 0
+
+          ## Work packages
+
+          - [x] W00 contract, completeness definition, risks, and master plan
+          - [x] W01 Devflow foundation, deterministic gates, and initial product skeleton
+          - [x] W02 upstream dependency and adapter contract
+          - [x] W03 persistence, immutable raw-page evidence, and atomic cursor checkpoints
+          - [x] W04 local credential isolation and security hardening
+          - [x] W05 recent timeline implementation and validation
+          - [x] W06 recursive historical-window backfill
+          - [x] W07 cross-layer coverage, conflict detection, and self-verifying exports
+          - [x] W08 rate-limit/reset-aware recovery and deterministic fault matrix
+          - [ ] W09 authorized local live E2E — `WAITING_HUMAN`
+          - [ ] W10 final acceptance, merge, and exact-main Post-Merge validation
+
+          ## Current gate
+
+          Follow `docs/implementation/x-user-timeline-v1/W09_LOCAL_E2E.md` locally. Do not send Cookie values or `accounts.db`. Submit only the redacted W09 evidence JSON plus coverage and inventory summaries.
+
+          This PR remains Draft until W09 evidence passes.
+          EOF
+          else
+            cat > /tmp/pr-body.md <<EOF
+          ## Goal
+
+          Build the first local-first, zero-paid-API-cost, resumable public X user timeline collector.
+
+          ## Canonical status
+
+          - Stage: \`${STAGE}\`
+          - Status: \`${STATUS}\`
+          - Last completed: \`${LAST_COMPLETED}\`
+          - Codex calls: \`${CODEX_CALLS}\`
+
+          The PR remains Draft. Its checklist will not advance beyond the canonical repository state.
+          EOF
+          fi
+          jq -n --rawfile body /tmp/pr-body.md '{body:$body}' > /tmp/pr.json
+          gh api --method PATCH repos/${GITHUB_REPOSITORY}/pulls/2 --input /tmp/pr.json >/dev/null
+
+          cat > /tmp/comment.md <<EOF
+          ## Automated task-state reconciliation
+
+          | Field | Value |
+          |---|---|
+          | Stage | \`${STAGE}\` |
+          | Status | \`${STATUS}\` |
+          | Last completed | \`${LAST_COMPLETED}\` |
+          | W09 gate ready | \`${READY}\` |
+          | Codex calls | \`${CODEX_CALLS}\` |
+
+          Full compile, Ruff, pytest, canonical-state, and secret-audit gates passed before this control-surface update. Temporary publication files are removed in the same workflow.
+          EOF
+          jq -n --rawfile body /tmp/comment.md '{body:$body}' > /tmp/comment.json
+          gh api --method POST repos/${GITHUB_REPOSITORY}/issues/1/comments --input /tmp/comment.json >/dev/null
+      - name: Remove temporary control surface and publish cleanup
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .bootstrap
+          find .github/workflows -maxdepth 1 -type f -name 'temp-*.yml' -delete
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m 'chore: remove temporary task-control workflow'
+          git push origin "HEAD:${TARGET_BRANCH}"
