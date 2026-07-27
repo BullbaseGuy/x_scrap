@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "state_revision": 5,
+  "state_revision": 6,
   "task_id": "x-user-timeline-v1",
   "title": "Public X user timeline export with resumable historical coverage",
   "status": "RUNNING",
@@ -14,8 +14,8 @@
   "security_status": "PENDING",
   "working_branch": "feature/x-user-timeline-v1",
   "pull_request": 2,
-  "current_stage": "W03",
-  "last_completed_stage": "W02",
+  "current_stage": "W05",
+  "last_completed_stage": "W04",
   "post_merge": {
     "status": "PENDING",
     "commit_sha": null
@@ -32,16 +32,16 @@
     "interruption_sent": false
   },
   "base_sha_at_start": "340bf6774ae1d2942b581b2ed2eaf660c9ff84eb",
-  "last_product_commit_sha": "3fe42239096580cb21207ef24aad7854480a1e45",
-  "last_successful_step": "W02 adapter contract, telemetry hardening, redaction, and deterministic gates passed",
-  "next_action": "Implement W03 page-level raw evidence, cursor checkpoints, and atomic ingestion",
-  "updated_at_utc": "2026-07-27T11:35:05Z",
+  "last_product_commit_sha": "919dec3054d2aee16a8e38bd6dd24c145c5c5a61",
+  "last_successful_step": "W04 local credential isolation and security hardening passed the complete deterministic apply gate",
+  "next_action": "Implement W05 author-filtered, cutoff-bounded, independently resumable recent timeline scopes",
+  "updated_at_utc": "2026-07-27T12:41:47Z",
   "gate_results": {
-    "compile": "PASS_CI",
-    "pytest": "PASS_CI",
-    "ruff": "PASS_CI",
-    "state": "PASS_CI",
-    "secret_audit": "PASS_CI"
+    "compile": "PASS_APPLY_WORKFLOW",
+    "pytest": "PASS_51_APPLY_WORKFLOW",
+    "ruff": "PASS_APPLY_WORKFLOW",
+    "state": "PASS_APPLY_WORKFLOW",
+    "secret_audit": "PASS_APPLY_WORKFLOW"
   },
   "retry_budget": {
     "infrastructure_limit": 3,
