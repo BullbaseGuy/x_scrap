@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "state_revision": 4,
+  "state_revision": 5,
   "task_id": "x-user-timeline-v1",
   "title": "Public X user timeline export with resumable historical coverage",
   "status": "RUNNING",
@@ -14,8 +14,8 @@
   "security_status": "PENDING",
   "working_branch": "feature/x-user-timeline-v1",
   "pull_request": 2,
-  "current_stage": "W02",
-  "last_completed_stage": "W01",
+  "current_stage": "W03",
+  "last_completed_stage": "W02",
   "post_merge": {
     "status": "PENDING",
     "commit_sha": null
@@ -32,21 +32,21 @@
     "interruption_sent": false
   },
   "base_sha_at_start": "340bf6774ae1d2942b581b2ed2eaf660c9ff84eb",
-  "last_product_commit_sha": "d5eeab488afc2c0197c493ba50f1763dcd793148",
-  "last_successful_step": "W01 published to Draft PR #2 with one-time bootstrap surface removed",
-  "next_action": "Complete W02 adapter contract evidence and resolve all pull-request CI findings",
-  "updated_at_utc": "2026-07-27T11:21:58Z",
+  "last_product_commit_sha": "3fe42239096580cb21207ef24aad7854480a1e45",
+  "last_successful_step": "W02 adapter contract, telemetry hardening, redaction, and deterministic gates passed",
+  "next_action": "Implement W03 page-level raw evidence, cursor checkpoints, and atomic ingestion",
+  "updated_at_utc": "2026-07-27T11:35:05Z",
   "gate_results": {
-    "compile": "PASS",
-    "pytest": "PASS_17_LOCAL",
-    "ruff": "PENDING_CI",
-    "state": "PENDING_CI",
-    "secret_audit": "PENDING_CI"
+    "compile": "PASS_CI",
+    "pytest": "PASS_CI",
+    "ruff": "PASS_CI",
+    "state": "PASS_CI",
+    "secret_audit": "PASS_CI"
   },
   "retry_budget": {
     "infrastructure_limit": 3,
     "same_root_cause_limit": 2,
-    "used": 1
+    "used": 2
   },
   "metrics": {
     "codex_calls": 0,
