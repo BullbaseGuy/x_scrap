@@ -32,6 +32,13 @@ class CollectorPage:
         object.__setattr__(self, "raw_payload", jsonable(self.raw_payload))
 
     def artifact_payload(self) -> dict[str, Any]:
+        """Return only the stable upstream payload stored as raw evidence."""
+
+        return dict(self.raw_payload)
+
+    def metadata_payload(self) -> dict[str, Any]:
+        """Return page metadata persisted in SQLite, not duplicated into raw evidence."""
+
         return {
             "schema_version": "1.0.0",
             "source": self.source,
@@ -41,5 +48,4 @@ class CollectorPage:
             "next_cursor": self.next_cursor,
             "captured_at": iso_utc(self.captured_at),
             "parsed_item_count": len(self.items),
-            "raw_payload": self.raw_payload,
         }
