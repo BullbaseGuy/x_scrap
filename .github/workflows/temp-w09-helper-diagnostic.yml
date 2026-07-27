@@ -1,0 +1,37 @@
+name: Temporary W09 Helper Diagnostic
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/temp-w09-helper-diagnostic.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TARGET_BRANCH: feature/x-user-timeline-v1
+      REPOSITORY: ${{ github.repository }}
+      TWS_TELEMETRY: '0'
+      DO_NOT_TRACK: '1'
+    steps:
+      - name: Run concise extracted-tree diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --quiet --depth 1 --branch "${TARGET_BRANCH}" "https://github.com/${REPOSITORY}.git" repo
+          cd repo
+          base64 --decode .bootstrap/w09-helper.tar.gz.b64 > /tmp/w09-helper.tar.gz
+          tar -xzf /tmp/w09-helper.tar.gz -C .
+          rm -f .github/workflows/temp-*.yml .bootstrap/w09-helper.tar.gz.b64
+          rmdir .bootstrap 2>/dev/null || true
+          python -m pip install --quiet -e '.[dev]'
+          ruff check --output-format=concise src tests scripts
+          pytest -q --tb=short
+          python scripts/devflow/validate_state.py --all-active --no-git
+          python scripts/devflow/secret_audit.py
