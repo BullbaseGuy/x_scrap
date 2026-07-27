@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
 from typing import Any
 
@@ -48,6 +49,8 @@ class PageRepository:
                     artifact_size INTEGER NOT NULL,
                     item_count INTEGER NOT NULL,
                     accepted_count INTEGER NOT NULL,
+                    oldest_post_at TEXT,
+                    newest_post_at TEXT,
                     captured_at TEXT NOT NULL,
                     committed_at TEXT NOT NULL,
                     PRIMARY KEY(job_id, scope_key, page_index),
@@ -59,6 +62,16 @@ class PageRepository:
                     ON harvest_pages(job_id, scope_key, next_cursor);
                 """
             )
+            self._ensure_column(conn, "harvest_pages", "oldest_post_at", "TEXT")
+            self._ensure_column(conn, "harvest_pages", "newest_post_at", "TEXT")
+
+    @staticmethod
+    def _ensure_column(
+        conn: sqlite3.Connection, table: str, column: str, declaration: str
+    ) -> None:
+        columns = {str(row["name"]) for row in conn.execute(f"PRAGMA table_info({table})")}
+        if column not in columns:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {declaration}")
 
     def ensure_scope(self, job_id: str, scope_key: str, source: str) -> dict[str, Any]:
         now = iso_utc(utc_now())
@@ -98,6 +111,9 @@ class PageRepository:
         """Commit page metadata, normalized posts, and the next cursor together."""
 
         now = iso_utc(utc_now())
+        post_times = [post.created_at for post in posts]
+        oldest_post_at = iso_utc(min(post_times)) if post_times else None
+        newest_post_at = iso_utc(max(post_times)) if post_times else None
         with self.database.connect() as conn:
             scope = conn.execute(
                 "SELECT * FROM harvest_scopes WHERE job_id=? AND scope_key=?",
@@ -116,6 +132,16 @@ class PageRepository:
                     return False
                 raise ValueError(
                     f"page index {page.page_index} for {scope_key} already has a different payload"
+                )
+
+            duplicate_payload = conn.execute(
+                """SELECT page_index FROM harvest_pages
+                WHERE job_id=? AND scope_key=? AND payload_sha256=? LIMIT 1""",
+                (job_id, scope_key, artifact.sha256),
+            ).fetchone()
+            if duplicate_payload is not None:
+                raise ValueError(
+                    f"payload for {scope_key} duplicates page {duplicate_payload['page_index']}"
                 )
 
             expected_index = int(scope["next_page_index"])
@@ -142,8 +168,8 @@ class PageRepository:
                 """INSERT INTO harvest_pages
                 (job_id, scope_key, page_index, source, operation, request_cursor, next_cursor,
                  payload_sha256, artifact_path, artifact_size, item_count, accepted_count,
-                 captured_at, committed_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                 oldest_post_at, newest_post_at, captured_at, committed_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     job_id,
                     scope_key,
@@ -157,6 +183,8 @@ class PageRepository:
                     artifact.size,
                     len(page.items),
                     len(posts),
+                    oldest_post_at,
+                    newest_post_at,
                     iso_utc(page.captured_at),
                     now,
                 ),
@@ -205,6 +233,19 @@ class PageRepository:
                 ).fetchall()
         return [dict(row) for row in rows]
 
+    def scope_stats(self, job_id: str, scope_key: str) -> dict[str, Any]:
+        with self.database.connect() as conn:
+            row = conn.execute(
+                """SELECT COUNT(*) AS page_count,
+                          COALESCE(SUM(item_count), 0) AS item_count,
+                          COALESCE(SUM(accepted_count), 0) AS accepted_count,
+                          MIN(oldest_post_at) AS oldest_post_at,
+                          MAX(newest_post_at) AS newest_post_at
+                   FROM harvest_pages WHERE job_id=? AND scope_key=?""",
+                (job_id, scope_key),
+            ).fetchone()
+        return dict(row)
+
     def count_pages(self, job_id: str) -> int:
         with self.database.connect() as conn:
             row = conn.execute(
@@ -213,7 +254,9 @@ class PageRepository:
         return int(row[0])
 
     @staticmethod
-    def _upsert_post(conn, job_id: str, post: PostRecord, now: str | None) -> None:
+    def _upsert_post(
+        conn: sqlite3.Connection, job_id: str, post: PostRecord, now: str | None
+    ) -> None:
         payload = post.to_json()
         existing = conn.execute(
             "SELECT source_set FROM posts WHERE job_id=? AND post_id=?",
