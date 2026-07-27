@@ -1,17 +1,16 @@
 from __future__ import annotations
 
 import os
-import re
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from x_scrap.domain.pages import CollectorPage
+from x_scrap.security import redact_text, secure_sqlite_family
 
 from .base import AuthRequired, RateLimited, TransientUpstreamError, UpstreamChanged
 
-_COOKIE_SECRET_RE = re.compile(r"(?i)(\b(?:auth_token|ct0)\s*=\s*)([^;\s]+)")
 _REQUIRED_COOKIE_NAMES = ("auth_token", "ct0")
 
 
@@ -32,15 +31,20 @@ class TwscrapeAdapter:
             raise RuntimeError(
                 "twscrape is not installed; install the project with `pip install -e .`"
             ) from exc
-        self._api = API(str(accounts_db), proxy=proxy)
+        self._accounts_db = Path(accounts_db).expanduser().resolve(strict=False)
+        self._api = API(str(self._accounts_db), proxy=proxy)
         self._parse_tweets = parse_tweets
+        secure_sqlite_family(self._accounts_db)
 
     async def add_cookie(self, label: str, cookie_header: str) -> None:
         label = label.strip()
         if not label or "\n" in label or "\r" in label:
             raise ValueError("account label must be a non-empty single line")
         _validate_cookie(cookie_header)
-        await self._api.pool.add_account_cookies(label, cookie_header)
+        try:
+            await self._api.pool.add_account_cookies(label, cookie_header)
+        finally:
+            secure_sqlite_family(self._accounts_db)
 
     async def list_accounts(self) -> list[dict[str, Any]]:
         accounts = await self._api.pool.get_all()
@@ -49,7 +53,7 @@ class TwscrapeAdapter:
                 "username": str(account.username),
                 "active": bool(account.active),
                 "last_used": str(account.last_used) if account.last_used else None,
-                "error_msg": _redact_secret_text(account.error_msg),
+                "error_msg": redact_text(account.error_msg),
             }
             for account in accounts
         ]
@@ -201,12 +205,6 @@ def _validate_cookie(cookie_header: str) -> None:
         raise ValueError("cookie header must contain non-empty auth_token and ct0 values")
 
 
-def _redact_secret_text(value: object | None) -> str | None:
-    if value is None:
-        return None
-    text = str(value)
-    return _COOKIE_SECRET_RE.sub(lambda match: f"{match.group(1)}<redacted>", text)
-
 
 def _bottom_cursor(payload: dict[str, Any]) -> str | None:
     cursor = _find_cursor_type(payload, "Bottom")
@@ -266,7 +264,7 @@ def _reset_at(exc: Exception) -> datetime | None:
 
 def _classify(exc: Exception) -> Exception:
     name = type(exc).__name__.lower()
-    message = _redact_secret_text(str(exc)) or type(exc).__name__
+    message = redact_text(str(exc)) or type(exc).__name__
     lowered = message.lower()
     if "rate" in name or "429" in lowered or "rate limit" in lowered:
         return RateLimited(message, reset_at=_reset_at(exc))

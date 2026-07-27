@@ -10,13 +10,20 @@ from pathlib import Path
 from typing import Any
 
 from x_scrap.domain.models import JobStatus, PostRecord, TimeWindow, WindowStatus, iso_utc, utc_now
+from x_scrap.security import (
+    ensure_private_directory,
+    redact_text,
+    redact_value,
+    secure_sqlite_family,
+)
 
 
 class Database:
     def __init__(self, path: str | Path):
-        self.path = Path(path)
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path = Path(path).expanduser().resolve(strict=False)
+        ensure_private_directory(self.path.parent)
         self.initialize()
+        secure_sqlite_family(self.path)
 
     @contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:
@@ -32,6 +39,7 @@ class Database:
             raise
         finally:
             conn.close()
+            secure_sqlite_family(self.path)
 
     def initialize(self) -> None:
         with self.connect() as conn:
@@ -147,21 +155,21 @@ class Database:
                 f"SELECT * FROM jobs WHERE username=? AND status IN ({placeholders}) ORDER BY updated_at DESC LIMIT 1",
                 (username.lstrip("@"), *statuses),
             ).fetchone()
-        return dict(row) if row else None
+        return redact_value(dict(row)) if row else None
 
     def get_job(self, job_id: str) -> dict[str, Any]:
         with self.connect() as conn:
             row = conn.execute("SELECT * FROM jobs WHERE job_id=?", (job_id,)).fetchone()
         if not row:
             raise KeyError(job_id)
-        return dict(row)
+        return redact_value(dict(row))
 
     def list_jobs(self, limit: int = 20) -> list[dict[str, Any]]:
         with self.connect() as conn:
             rows = conn.execute(
                 "SELECT * FROM jobs ORDER BY updated_at DESC LIMIT ?", (limit,)
             ).fetchall()
-        return [dict(row) for row in rows]
+        return [redact_value(dict(row)) for row in rows]
 
     def update_job(self, job_id: str, **changes: Any) -> None:
         allowed = {
@@ -177,6 +185,9 @@ class Database:
             raise ValueError(f"unsupported job fields: {sorted(invalid)}")
         if not changes:
             return
+        for key in ("error_code", "error_message"):
+            if key in changes:
+                changes[key] = redact_text(changes[key])
         changes["updated_at"] = iso_utc(utc_now())
         assignments = ", ".join(f"{key}=?" for key in changes)
         values = [value.value if hasattr(value, "value") else value for value in changes.values()]
@@ -186,6 +197,7 @@ class Database:
             )
 
     def save_user_snapshot(self, job_id: str, payload: dict[str, Any]) -> None:
+        payload = redact_value(payload)
         captured_at = payload.get("captured_at") or iso_utc(utc_now())
         with self.connect() as conn:
             conn.execute(
@@ -255,6 +267,8 @@ class Database:
         invalid = set(changes) - allowed
         if invalid:
             raise ValueError(f"unsupported window fields: {sorted(invalid)}")
+        if "terminal_reason" in changes:
+            changes["terminal_reason"] = redact_text(changes["terminal_reason"])
         changes["updated_at"] = iso_utc(utc_now())
         assignments = ", ".join(f"{key}=?" for key in changes)
         values = [value.value if hasattr(value, "value") else value for value in changes.values()]
@@ -322,6 +336,11 @@ class Database:
                     job_id,
                     iso_utc(utc_now()),
                     event_type,
-                    json.dumps(details, ensure_ascii=False, sort_keys=True, default=str),
+                    json.dumps(
+                        redact_value(details),
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        default=str,
+                    ),
                 ),
             )

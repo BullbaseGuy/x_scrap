@@ -3,11 +3,17 @@ from __future__ import annotations
 import gzip
 import hashlib
 import json
-import os
-import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+from x_scrap.security import (
+    atomic_write_private_bytes,
+    ensure_private_directory,
+    is_within,
+    require_relative_path,
+    secure_file,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -19,8 +25,7 @@ class RawArtifact:
 
 class RawStore:
     def __init__(self, root: Path):
-        self.root = root
-        self.root.mkdir(parents=True, exist_ok=True)
+        self.root = ensure_private_directory(root)
 
     def write_json(self, relative: Path, payload: Any) -> RawArtifact:
         compressed, digest = self._encode(payload)
@@ -46,19 +51,18 @@ class RawStore:
         return compressed, hashlib.sha256(compressed).hexdigest()
 
     def _write(self, relative: Path, compressed: bytes, digest: str) -> RawArtifact:
-        path = self.root / relative
-        path.parent.mkdir(parents=True, exist_ok=True)
+        require_relative_path(relative)
+        path = (self.root / relative).resolve(strict=False)
+        if not is_within(path, self.root):
+            raise ValueError(f"raw artifact path escapes root: {relative}")
+        ensure_private_directory(path.parent)
         if path.exists():
             existing = path.read_bytes()
             existing_digest = hashlib.sha256(existing).hexdigest()
             if existing_digest != digest:
                 raise ValueError(f"raw artifact path already contains different content: {relative}")
+            secure_file(path)
             return RawArtifact(path=path, sha256=digest, size=len(existing))
 
-        temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
-        try:
-            temporary.write_bytes(compressed)
-            os.replace(temporary, path)
-        finally:
-            temporary.unlink(missing_ok=True)
+        atomic_write_private_bytes(path, compressed)
         return RawArtifact(path=path, sha256=digest, size=len(compressed))

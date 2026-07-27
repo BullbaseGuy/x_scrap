@@ -124,3 +124,9 @@ Only the stable JSON response body is stored in the gzip artifact. Capture time,
 - Telemetry is forcibly disabled before importing `twscrape`.
 - CI never performs an authenticated live X request.
 - The project does not automate email verification, CAPTCHA handling, account creation, or protected-content access.
+
+## Credential and local-file hardening
+
+The CLI has no Cookie argv surface. The interactive prompt passes the Cookie directly to the adapter, which forces upstream telemetry off and re-applies private permissions to the account database after initialization and mutation. The database layer redacts error fields and event payloads before storage. Raw and export writers use private temporary files followed by atomic replacement.
+
+State initialization rejects paths below a conventional Git worktree. POSIX modes are enforced where supported; Windows behavior is intentionally limited to inherited ACLs and is documented without an encryption claim.

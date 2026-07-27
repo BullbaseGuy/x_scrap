@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import getpass
 import json
+import sys
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
@@ -11,6 +12,7 @@ from pathlib import Path
 from x_scrap.adapters.twscrape_adapter import TwscrapeAdapter
 from x_scrap.config import AppPaths
 from x_scrap.domain.models import parse_datetime
+from x_scrap.security import redact_text, redact_value
 from x_scrap.service import UserExportService
 from x_scrap.storage.database import Database
 
@@ -24,7 +26,6 @@ def build_parser() -> argparse.ArgumentParser:
     auth_sub = auth.add_subparsers(dest="auth_command", required=True)
     add_cookie = auth_sub.add_parser("add-cookie")
     add_cookie.add_argument("--label", required=True)
-    add_cookie.add_argument("--cookie", help="single-line cookie header; omit to enter without echo")
     auth_sub.add_parser("list")
 
     user = sub.add_parser("user")
@@ -54,17 +55,17 @@ async def _run(args: argparse.Namespace) -> int:
     db = Database(paths.jobs_db)
     if args.command == "jobs":
         payload = db.list_jobs(args.limit) if args.jobs_command == "list" else db.get_job(args.job_id)
-        print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+        print(json.dumps(redact_value(payload), ensure_ascii=False, indent=2, sort_keys=True))
         return 0
 
     adapter = TwscrapeAdapter(paths.accounts_db)
     if args.command == "auth":
         if args.auth_command == "add-cookie":
-            cookie = args.cookie or getpass.getpass("Paste auth_token and ct0 cookie header: ")
+            cookie = getpass.getpass("Paste auth_token and ct0 cookie header: ")
             await adapter.add_cookie(args.label, cookie)
             print(json.dumps({"status": "ADDED", "label": args.label}))
         else:
-            print(json.dumps(await adapter.list_accounts(), ensure_ascii=False, indent=2))
+            print(json.dumps(redact_value(await adapter.list_accounts()), ensure_ascii=False, indent=2))
         return 0
 
     if args.command == "user" and args.user_command == "export":
@@ -85,7 +86,7 @@ async def _run(args: argparse.Namespace) -> int:
             max_posts_per_window=args.max_posts_per_window,
             timeline_limit=args.timeline_limit,
         )
-        print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
+        print(json.dumps(redact_value(result), ensure_ascii=False, indent=2, sort_keys=True))
         return 0
     return 2
 
@@ -100,7 +101,20 @@ def _parse_cli_datetime(value: str | None) -> datetime | None:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    return asyncio.run(_run(build_parser().parse_args(argv)))
+    args = build_parser().parse_args(argv)
+    try:
+        return asyncio.run(_run(args))
+    except KeyboardInterrupt:
+        print(json.dumps({"status": "INTERRUPTED"}), file=sys.stderr)
+        return 130
+    except Exception as exc:
+        payload = {
+            "status": "ERROR",
+            "error": type(exc).__name__,
+            "message": redact_text(exc),
+        }
+        print(json.dumps(payload, ensure_ascii=False, sort_keys=True), file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":

@@ -3,9 +3,11 @@ from __future__ import annotations
 import builtins
 import importlib
 import os
+import stat
 import sys
 import types
 from datetime import UTC, datetime
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -201,3 +203,27 @@ def test_upstream_errors_are_classified_and_redacted_conservatively():
         TransientUpstreamError,
     )
     assert isinstance(adapter_module._classify(RuntimeError("unexpected response")), UpstreamChanged)
+
+
+@pytest.mark.asyncio
+async def test_accounts_database_is_private_after_init_and_cookie_update(monkeypatch, tmp_path):
+    class FakePool:
+        def __init__(self, path):
+            self.path = path
+
+        async def add_account_cookies(self, label: str, cookie_header: str) -> None:
+            self.path.write_text(cookie_header, encoding="utf-8")
+
+    class FakeAPI:
+        def __init__(self, accounts_db: str, *, proxy: str | None = None):
+            path = Path(accounts_db)
+            path.write_text("created", encoding="utf-8")
+            self.pool = FakePool(path)
+
+    _install_fake_twscrape(monkeypatch, FakeAPI)
+    database = tmp_path / "accounts.db"
+    adapter = adapter_module.TwscrapeAdapter(database)
+    await adapter.add_cookie("primary", "auth_token=x; ct0=y")
+
+    if os.name == "posix":
+        assert stat.S_IMODE(database.stat().st_mode) == 0o600

@@ -7,6 +7,7 @@ from typing import Any
 
 from x_scrap.domain.models import PostRecord, iso_utc, utc_now
 from x_scrap.domain.pages import CollectorPage
+from x_scrap.security import redact_text, redact_value
 from x_scrap.storage.database import Database
 from x_scrap.storage.raw_store import RawArtifact
 
@@ -112,7 +113,7 @@ class PageRepository:
                 "SELECT * FROM harvest_scopes WHERE job_id=? AND scope_key=?",
                 (job_id, scope_key),
             ).fetchone()
-        return dict(row) if row else None
+        return redact_value(dict(row)) if row else None
 
     def commit_page(
         self,
@@ -237,7 +238,7 @@ class PageRepository:
                 """UPDATE harvest_scopes
                 SET state=?, last_error=?, updated_at=?
                 WHERE job_id=? AND scope_key=?""",
-                (state, detail, iso_utc(utc_now()), job_id, scope_key),
+                (state, redact_text(detail), iso_utc(utc_now()), job_id, scope_key),
             )
             if result.rowcount != 1:
                 raise KeyError(f"unknown harvest scope: {scope_key}")
@@ -256,7 +257,7 @@ class PageRepository:
                     ORDER BY page_index""",
                     (job_id, scope_key),
                 ).fetchall()
-        return [dict(row) for row in rows]
+        return [redact_value(dict(row)) for row in rows]
 
     def page_post_ids(self, job_id: str, scope_key: str, page_index: int) -> list[str]:
         with self.database.connect() as conn:

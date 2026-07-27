@@ -78,3 +78,11 @@ The gzip payload is the stable JSON body supplied by the adapter's raw page meth
 `COMPLETE_PUBLICLY_RETRIEVABLE` means every planned search leaf window reached a terminal complete state, every committed page has an auditable cursor transition, and there are no time gaps. It does not mean deleted or otherwise unavailable posts were recovered.
 
 `PARTIAL_UNRESOLVED_WINDOWS` means one or more leaf windows are failed, still have a cursor at the minimum size, or are otherwise unresolved. Read `coverage.json` before using the dataset as complete.
+
+## 8. Credential and file protection
+
+The Cookie must be entered through the no-echo prompt. Supplying it as a command-line argument is unsupported and rejected by the parser. This keeps it out of PowerShell history and process metadata.
+
+`X_SCRAP_HOME` cannot be located inside a Git worktree. On POSIX systems, runtime directories are set to `0700` and databases/evidence/exports to `0600`. On Windows, select a directory protected by the current user's ACL; the application does not claim or add encryption.
+
+The session database contains local plaintext browser-session material. Back it up only to an encrypted location, never commit it, and rotate the X session after suspected disclosure.

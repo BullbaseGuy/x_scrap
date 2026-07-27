@@ -46,7 +46,7 @@ $env:TWS_TELEMETRY = '0'
 
 ## Add a browser-cookie session
 
-Open X.com in your own browser, copy the `auth_token` and `ct0` cookie values, then add them locally. Omitting `--cookie` uses a no-echo prompt and is safer than leaving the value in shell history.
+Open X.com in your own browser, copy the `auth_token` and `ct0` cookie values, then add them locally. The command always uses a no-echo prompt so the Cookie is not placed in shell history or process arguments.
 
 ```powershell
 x-scrap auth add-cookie --label primary
@@ -121,3 +121,9 @@ Exact-main post-merge validation
 Canonical task state is under `docs/implementation/`. Codex/agent execution and automatic merge are disabled by default.
 
 See [usage](docs/USAGE.md), [architecture](docs/architecture/ARCHITECTURE.md), and [Task #1](https://github.com/BullbaseGuy/x_scrap/issues/1).
+
+## Security model
+
+The Cookie is accepted only through a no-echo prompt; the CLI intentionally has no `--cookie` option. `X_SCRAP_HOME` must be outside a Git worktree. POSIX state directories are restricted to `0700` and files to `0600`; Windows relies on the selected directory's inherited ACL. The local `twscrape` account database is plaintext SQLite protected by OS access controls, not encrypted by this project.
+
+Credential-shaped values are centrally redacted before persisted errors, events, account-list output, and top-level CLI errors. GitHub Actions never receive a real Cookie or collected dataset. See [Security policy](docs/security/SECURITY.md) and [Threat model](docs/security/THREAT_MODEL.md).
