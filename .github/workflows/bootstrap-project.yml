@@ -1,0 +1,39 @@
+name: Bootstrap Project Tree
+
+on:
+  push:
+    branches:
+      - feature/x-user-timeline-v1
+    paths:
+      - .bootstrap/manifest.json
+
+permissions:
+  contents: write
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Reconstruct verified project archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .bootstrap/chunk-* > /tmp/x_scrap_project.tar.gz.b64
+          base64 --decode /tmp/x_scrap_project.tar.gz.b64 > /tmp/x_scrap_project.tar.gz
+          echo "842539f68d9187ae402a3c974ba13db7a66da09bbc38781e33e70e130dd61117  /tmp/x_scrap_project.tar.gz" | sha256sum --check --strict
+          tar -xzf /tmp/x_scrap_project.tar.gz -C .
+      - name: Commit generated project tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Project tree already present"
+            exit 0
+          fi
+          git commit -m "build: bootstrap resumable X collector"
+          git push
