@@ -272,11 +272,14 @@ class PageRepository:
             row = conn.execute(
                 """SELECT COUNT(*) AS page_count,
                           COALESCE(SUM(item_count), 0) AS item_count,
-                          COALESCE(SUM(accepted_count), 0) AS accepted_count,
+                          COALESCE((
+                              SELECT COUNT(DISTINCT post_id) FROM harvest_page_posts
+                              WHERE job_id=? AND scope_key=?
+                          ), 0) AS accepted_count,
                           MIN(oldest_post_at) AS oldest_post_at,
                           MAX(newest_post_at) AS newest_post_at
                    FROM harvest_pages WHERE job_id=? AND scope_key=?""",
-                (job_id, scope_key),
+                (job_id, scope_key, job_id, scope_key),
             ).fetchone()
         return dict(row)
 
