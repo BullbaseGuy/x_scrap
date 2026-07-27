@@ -31,11 +31,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rm .github/workflows/temp-apply-w07-w08.yml
-          base64 --decode .bootstrap/w07-w08-update.tar.gz.b64 > /tmp/w07-w08-update.tar.gz
+          cat .bootstrap/update-chunk-* > /tmp/w07-w08-update.tar.gz.b64
+          test "$(wc -c < /tmp/w07-w08-update.tar.gz.b64)" -eq 59184
+          base64 --decode /tmp/w07-w08-update.tar.gz.b64 > /tmp/w07-w08-update.tar.gz
           echo '0dd19679e1c896bde1485752d2afaa12389c05625cf0c775100e6d04eee6a98f  /tmp/w07-w08-update.tar.gz' | sha256sum --check --strict
           tar -xzf /tmp/w07-w08-update.tar.gz -C .
-          rm .bootstrap/w07-w08-update.tar.gz.b64
+          rm -f \
+            .github/workflows/temp-apply-w07-w08.yml \
+            .github/workflows/temp-archive-diagnostic.yml \
+            .github/workflows/temp-w07-snapshot.yml \
+            .bootstrap/w07-w08-update.tar.gz.b64 \
+            .bootstrap/update-chunk-*
           rmdir .bootstrap 2>/dev/null || true
       - name: Install deterministic development dependencies
         run: python -m pip install -e '.[dev]'
