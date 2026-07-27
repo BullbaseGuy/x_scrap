@@ -1,9 +1,9 @@
 name: W09 Ruff Diagnostic
 
 on:
-  push:
+  pull_request:
     branches:
-      - feature/x-user-timeline-v1
+      - main
     paths:
       - '.github/workflows/w09-ruff-diagnostic.yml'
 
