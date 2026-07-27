@@ -32,10 +32,10 @@
     "interruption_sent": false
   },
   "base_sha_at_start": "340bf6774ae1d2942b581b2ed2eaf660c9ff84eb",
-  "last_product_commit_sha": "PENDING_W06_APPLY_COMMIT",
+  "last_product_commit_sha": "a3633c8588bf51c7d69c8f5602c8b431a9a449f6",
   "last_successful_step": "W06 stable-ID historical search and exact recursive windows passed local deterministic validation",
   "next_action": "Implement W07 cross-layer coverage consistency, conflict detection, and atomic self-verifying exports",
-  "updated_at_utc": "2026-07-27T13:35:32Z",
+  "updated_at_utc": "2026-07-27T13:59:32Z",
   "gate_results": {
     "compile": "PASS_W06_APPLY_WORKFLOW",
     "pytest": "PASS_69_W06_APPLY_WORKFLOW",
