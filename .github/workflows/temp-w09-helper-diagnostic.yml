@@ -28,10 +28,30 @@ jobs:
           cd repo
           base64 --decode .bootstrap/w09-helper.tar.gz.b64 > /tmp/w09-helper.tar.gz
           tar -xzf /tmp/w09-helper.tar.gz -C .
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('scripts/live/collect_w09_evidence.py')
+          text = path.read_text(encoding='utf-8')
+          text = text.replace(
+              'from x_scrap.security import redact_text, redact_value, reject_git_worktree_state_home, write_private_text\n',
+              'from x_scrap.security import (\n'
+              '    redact_text,\n'
+              '    redact_value,\n'
+              '    reject_git_worktree_state_home,\n'
+              '    write_private_text,\n'
+              ')\n',
+          )
+          path.write_text(text, encoding='utf-8')
+          PY
           rm -f .github/workflows/temp-*.yml .bootstrap/w09-helper.tar.gz.b64
           rmdir .bootstrap 2>/dev/null || true
           python -m pip install --quiet -e '.[dev]'
+          echo '=== RUFF ==='
           ruff check --output-format=concise src tests scripts
+          echo '=== PYTEST ==='
           pytest -q --tb=short
+          echo '=== STATE ==='
           python scripts/devflow/validate_state.py --all-active --no-git
+          echo '=== SECRET ==='
           python scripts/devflow/secret_audit.py
