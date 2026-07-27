@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "state_revision": 14,
+  "state_revision": 15,
   "task_id": "x-user-timeline-v1",
   "title": "Public X user timeline export with resumable historical coverage",
   "status": "WAITING_HUMAN",
@@ -9,7 +9,7 @@
     "domain": "x-public-data-collection",
     "status": "PENDING",
     "reason_code": "LIVE_E2E_REQUIRED",
-    "details_path": "docs/implementation/x-user-timeline-v1/W09_plan.md"
+    "details_path": "docs/implementation/x-user-timeline-v1/W09_LIVE_RUNBOOK.md"
   },
   "security_status": "PENDING",
   "working_branch": "feature/x-user-timeline-v1",
@@ -22,9 +22,9 @@
   },
   "human_gate": {
     "required": true,
-    "reason": "W09 requires the user's authorized local X browser session and a real interruption/resume run; credentials must not enter GitHub or chat.",
-    "minimum_action": "Run the W09 preflight and authenticated smoke commands from W09_plan.md locally, then provide only the generated redacted evidence JSON.",
-    "resume_from": "W09 local opt-in authenticated E2E"
+    "reason": "W09 requires the user's authorized local X browser session and real live traffic; credentials must not enter GitHub or chat.",
+    "minimum_action": "Run scripts/live/run_w09.ps1 locally with a private X_SCRAP_HOME and public targets, manually review W09_ACCEPTANCE.json, then provide only that sanitized acceptance file.",
+    "resume_from": "W09 one-command authorized local E2E"
   },
   "notification": {
     "control_issue_number": 1,
@@ -32,17 +32,17 @@
     "interruption_sent": false
   },
   "base_sha_at_start": "340bf6774ae1d2942b581b2ed2eaf660c9ff84eb",
-  "last_product_commit_sha": "3786a3150c5539fd23816b79b3e94ef45de6fb21",
-  "last_successful_step": "W09 redacted evidence collector and runbook passed permanent Test, Product Gate, State Consistency, and Secret Audit workflows with 85 deterministic tests",
-  "next_action": "Run the local authenticated W09 preflight and interruption/resume E2E, then share only the generated redacted evidence JSON",
-  "updated_at_utc": "2026-07-27T15:33:47Z",
+  "last_product_commit_sha": "2db8e80c54c8e6acef3c51430b2921ad635c586e",
+  "last_successful_step": "W09 one-command orchestration, strict sanitized evidence, exact interruption/resume validation, and acceptance generation passed compile, Ruff, full pytest, task-state, secret-audit, and temporary-surface gates",
+  "next_action": "Run the single local PowerShell command in W09_LIVE_RUNBOOK.md and return only the manually reviewed W09_ACCEPTANCE.json",
+  "updated_at_utc": "2026-07-27T16:05:03Z",
   "gate_results": {
-    "compile": "PASS_CI",
-    "pytest": "PASS_85_CI",
-    "ruff": "PASS_CI",
-    "product_gate": "PASS_CI",
-    "state": "PASS_CI",
-    "secret_audit": "PASS_CI"
+    "compile": "PASS_ATOMIC_GATE",
+    "pytest": "PASS_FULL_SUITE_ATOMIC_GATE",
+    "ruff": "PASS_ATOMIC_GATE",
+    "product_gate": "PASS_EQUIVALENT_ATOMIC_GATE",
+    "state": "PASS_ATOMIC_GATE",
+    "secret_audit": "PASS_ATOMIC_GATE"
   },
   "retry_budget": {
     "infrastructure_limit": 3,
