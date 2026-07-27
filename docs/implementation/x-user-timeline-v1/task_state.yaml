@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "state_revision": 15,
+  "state_revision": 16,
   "task_id": "x-user-timeline-v1",
   "title": "Public X user timeline export with resumable historical coverage",
   "status": "WAITING_HUMAN",
@@ -33,16 +33,16 @@
   },
   "base_sha_at_start": "340bf6774ae1d2942b581b2ed2eaf660c9ff84eb",
   "last_product_commit_sha": "2db8e80c54c8e6acef3c51430b2921ad635c586e",
-  "last_successful_step": "W09 one-command orchestration, strict sanitized evidence, exact interruption/resume validation, and acceptance generation passed compile, Ruff, full pytest, task-state, secret-audit, and temporary-surface gates",
+  "last_successful_step": "W09 one-command orchestration and strict acceptance evidence passed the atomic publication gate and permanent Test, Product Gate, State Consistency, and Secret Audit workflows",
   "next_action": "Run the single local PowerShell command in W09_LIVE_RUNBOOK.md and return only the manually reviewed W09_ACCEPTANCE.json",
-  "updated_at_utc": "2026-07-27T16:05:03Z",
+  "updated_at_utc": "2026-07-27T16:06:56Z",
   "gate_results": {
-    "compile": "PASS_ATOMIC_GATE",
-    "pytest": "PASS_FULL_SUITE_ATOMIC_GATE",
-    "ruff": "PASS_ATOMIC_GATE",
-    "product_gate": "PASS_EQUIVALENT_ATOMIC_GATE",
-    "state": "PASS_ATOMIC_GATE",
-    "secret_audit": "PASS_ATOMIC_GATE"
+    "compile": "PASS_CI",
+    "pytest": "PASS_FULL_SUITE_CI",
+    "ruff": "PASS_CI",
+    "product_gate": "PASS_CI",
+    "state": "PASS_CI",
+    "secret_audit": "PASS_CI"
   },
   "retry_budget": {
     "infrastructure_limit": 3,
