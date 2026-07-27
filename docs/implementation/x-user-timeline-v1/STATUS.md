@@ -22,11 +22,12 @@
 - W06 canonical resolved-username search, stable-user-ID enforcement, whole-second half-open windows, integer midpoint splits, noisy-result filtering, dense-window recursion, and independent child-scope resume.
 - W07 exact evidence-graph coverage validation, same-ID material conflict preservation, `SOURCE_CONFLICT`, immutable raw verification, and atomic self-verifying export bundles.
 - W08 reset-aware 429 waits, automatic cursor resume for timelines and search, root-cause retry budgets, explicit recovery events, and non-recoverable error separation.
-- Deterministic validation currently contains 83 tests; compile, pytest, state validation, and secret audit pass locally. The atomic apply workflow must also pass Ruff and the full Product Gate before publication.
+- W07-W08 were published atomically after Python compilation, Ruff, all 83 deterministic tests, task-state validation, secret audit, and `git diff --check` passed.
+- All temporary write-capable, diagnostic, snapshot, archive, and chunk surfaces were removed in the same gated publication commit.
 
 ## Human gate — W09
 
-The remaining acceptance evidence requires the user's authorized browser Cookie and live X traffic on the user's local machine. Run the commands and interruption/resume procedure in `W09_plan.md`. Do not send Cookie values, local account databases, or raw authorization headers.
+The remaining acceptance evidence requires the user's authorized browser Cookie and live X traffic on the user's local machine. Run the commands and interruption/resume procedure in `W09_plan.md`. Do not send Cookie values, local account databases, raw authorization headers, or unredacted raw responses.
 
 ## Remaining after W09
 

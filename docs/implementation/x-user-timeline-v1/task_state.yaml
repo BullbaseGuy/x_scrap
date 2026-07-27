@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "state_revision": 9,
+  "state_revision": 10,
   "task_id": "x-user-timeline-v1",
   "title": "Public X user timeline export with resumable historical coverage",
   "status": "WAITING_HUMAN",
@@ -32,16 +32,16 @@
     "interruption_sent": false
   },
   "base_sha_at_start": "340bf6774ae1d2942b581b2ed2eaf660c9ff84eb",
-  "last_product_commit_sha": "a3633c8588bf51c7d69c8f5602c8b431a9a449f6",
-  "last_successful_step": "W07 evidence-graph/export hardening and W08 reset-aware automatic recovery passed 83 deterministic local tests",
-  "next_action": "Publish W07-W08 through the atomic gate, then run the W09 local authenticated preflight and interruption/resume E2E without sharing Cookie values",
-  "updated_at_utc": "2026-07-27T14:44:38Z",
+  "last_product_commit_sha": "d23401ad03ac0d9d7ef2460009f2725b41175351",
+  "last_successful_step": "W07 evidence-graph/export hardening and W08 reset-aware recovery were atomically published after compile, Ruff, 83 tests, state validation, secret audit, and diff checks passed",
+  "next_action": "Run the W09 local authenticated preflight and interruption/resume E2E without sharing Cookie values",
+  "updated_at_utc": "2026-07-27T15:07:18Z",
   "gate_results": {
-    "compile": "PASS_83_LOCAL",
-    "pytest": "PASS_83_LOCAL",
-    "ruff": "PENDING_ATOMIC_APPLY",
-    "state": "PASS_LOCAL",
-    "secret_audit": "PASS_LOCAL"
+    "compile": "PASS_ATOMIC_APPLY",
+    "pytest": "PASS_83_ATOMIC_APPLY",
+    "ruff": "PASS_ATOMIC_APPLY",
+    "state": "PASS_ATOMIC_APPLY",
+    "secret_audit": "PASS_ATOMIC_APPLY"
   },
   "retry_budget": {
     "infrastructure_limit": 3,
