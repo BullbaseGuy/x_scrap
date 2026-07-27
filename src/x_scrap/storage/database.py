@@ -9,7 +9,16 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from x_scrap.domain.models import JobStatus, PostRecord, TimeWindow, WindowStatus, iso_utc, utc_now
+from x_scrap.domain.models import (
+    JobStatus,
+    PostRecord,
+    TimeWindow,
+    WindowStatus,
+    iso_utc,
+    post_material_payload,
+    post_material_sha256,
+    utc_now,
+)
 from x_scrap.security import (
     ensure_private_directory,
     redact_text,
@@ -95,6 +104,25 @@ class Database:
                 );
                 CREATE INDEX IF NOT EXISTS idx_posts_export
                     ON posts(job_id, created_at, post_id);
+
+                CREATE TABLE IF NOT EXISTS post_conflicts (
+                    job_id TEXT NOT NULL REFERENCES jobs(job_id) ON DELETE CASCADE,
+                    post_id TEXT NOT NULL,
+                    canonical_material_sha256 TEXT NOT NULL,
+                    observed_material_sha256 TEXT NOT NULL,
+                    observed_source TEXT NOT NULL,
+                    canonical_material TEXT NOT NULL,
+                    observed_material TEXT NOT NULL,
+                    detected_at TEXT NOT NULL,
+                    PRIMARY KEY(
+                        job_id, post_id, canonical_material_sha256,
+                        observed_material_sha256, observed_source
+                    ),
+                    FOREIGN KEY(job_id, post_id)
+                        REFERENCES posts(job_id, post_id) ON DELETE CASCADE
+                );
+                CREATE INDEX IF NOT EXISTS idx_post_conflicts_job
+                    ON post_conflicts(job_id, post_id);
 
                 CREATE TABLE IF NOT EXISTS user_snapshots (
                     job_id TEXT PRIMARY KEY REFERENCES jobs(job_id) ON DELETE CASCADE,
@@ -279,21 +307,28 @@ class Database:
 
     def upsert_post(self, job_id: str, post: PostRecord) -> bool:
         now = iso_utc(utc_now())
-        payload = post.to_json()
         with self.connect() as conn:
-            existing = conn.execute(
-                "SELECT source_set FROM posts WHERE job_id=? AND post_id=?",
-                (job_id, post.post_id),
-            ).fetchone()
-            if existing:
-                sources = set(json.loads(existing["source_set"]))
-                sources.add(post.source)
-                conn.execute(
-                    """UPDATE posts SET source_set=?, payload=?, updated_at=?
-                    WHERE job_id=? AND post_id=?""",
-                    (json.dumps(sorted(sources)), payload, now, job_id, post.post_id),
-                )
-                return False
+            inserted, _ = self._upsert_post_connection(conn, job_id, post, now)
+        return inserted
+
+    @staticmethod
+    def _upsert_post_connection(
+        conn: sqlite3.Connection,
+        job_id: str,
+        post: PostRecord,
+        now: str | None,
+    ) -> tuple[bool, bool]:
+        incoming_payload = post.to_dict()
+        incoming_json = json.dumps(
+            incoming_payload,
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        existing = conn.execute(
+            "SELECT source_set, payload FROM posts WHERE job_id=? AND post_id=?",
+            (job_id, post.post_id),
+        ).fetchone()
+        if existing is None:
             conn.execute(
                 """INSERT INTO posts
                 (job_id, post_id, created_at, username, source_set, payload, first_seen_at, updated_at)
@@ -304,12 +339,50 @@ class Database:
                     iso_utc(post.created_at),
                     post.username,
                     json.dumps([post.source]),
-                    payload,
+                    incoming_json,
                     now,
                     now,
                 ),
             )
-            return True
+            return True, False
+
+        existing_payload = json.loads(existing["payload"])
+        existing_hash = post_material_sha256(existing_payload)
+        incoming_hash = post_material_sha256(incoming_payload)
+        conflict = existing_hash != incoming_hash
+        sources = set(json.loads(existing["source_set"]))
+        sources.add(post.source)
+        conn.execute(
+            """UPDATE posts SET source_set=?, updated_at=?
+            WHERE job_id=? AND post_id=?""",
+            (json.dumps(sorted(sources)), now, job_id, post.post_id),
+        )
+        if conflict:
+            conn.execute(
+                """INSERT OR IGNORE INTO post_conflicts
+                (job_id, post_id, canonical_material_sha256, observed_material_sha256,
+                 observed_source, canonical_material, observed_material, detected_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    job_id,
+                    post.post_id,
+                    existing_hash,
+                    incoming_hash,
+                    post.source,
+                    json.dumps(
+                        post_material_payload(existing_payload),
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    ),
+                    json.dumps(
+                        post_material_payload(incoming_payload),
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    ),
+                    now,
+                ),
+            )
+        return False, conflict
 
     def iter_posts(self, job_id: str) -> Iterator[dict[str, Any]]:
         with self.connect() as conn:
@@ -327,6 +400,87 @@ class Database:
             return int(
                 conn.execute("SELECT COUNT(*) FROM posts WHERE job_id=?", (job_id,)).fetchone()[0]
             )
+
+    def list_post_ids(self, job_id: str) -> list[str]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                "SELECT post_id FROM posts WHERE job_id=? ORDER BY post_id",
+                (job_id,),
+            ).fetchall()
+        return [str(row["post_id"]) for row in rows]
+
+    def list_post_conflicts(self, job_id: str) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                """SELECT * FROM post_conflicts WHERE job_id=?
+                ORDER BY post_id, observed_source, observed_material_sha256""",
+                (job_id,),
+            ).fetchall()
+        conflicts: list[dict[str, Any]] = []
+        for row in rows:
+            item = dict(row)
+            item["canonical_material"] = json.loads(item["canonical_material"])
+            item["observed_material"] = json.loads(item["observed_material"])
+            conflicts.append(redact_value(item))
+        return conflicts
+
+    def count_post_conflicts(self, job_id: str) -> int:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) FROM post_conflicts WHERE job_id=?",
+                (job_id,),
+            ).fetchone()
+        return int(row[0])
+
+    def post_source_counts(self, job_id: str) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for post in self.iter_posts(job_id):
+            for source in post.get("sources", []):
+                counts[str(source)] = counts.get(str(source), 0) + 1
+        return dict(sorted(counts.items()))
+
+    def list_events(self, job_id: str) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                """SELECT event_id, occurred_at, event_type, details
+                FROM events WHERE job_id=? ORDER BY event_id""",
+                (job_id,),
+            ).fetchall()
+        events: list[dict[str, Any]] = []
+        for row in rows:
+            item = dict(row)
+            item["details"] = json.loads(item["details"])
+            events.append(redact_value(item))
+        return events
+
+    def latest_evidence_at(self, job_id: str) -> str:
+        candidates: list[str] = []
+        queries = (
+            ("jobs", "updated_at"),
+            ("windows", "updated_at"),
+            ("posts", "updated_at"),
+            ("user_snapshots", "captured_at"),
+            ("events", "occurred_at"),
+            ("harvest_scopes", "updated_at"),
+            ("harvest_pages", "committed_at"),
+        )
+        with self.connect() as conn:
+            for table, column in queries:
+                exists = conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                    (table,),
+                ).fetchone()
+                if exists is None:
+                    continue
+                row = conn.execute(
+                    f"SELECT MAX({column}) FROM {table} WHERE job_id=?",
+                    (job_id,),
+                ).fetchone()
+                if row is not None and row[0]:
+                    candidates.append(str(row[0]))
+        if not candidates:
+            raise KeyError(job_id)
+        return max(candidates)
 
     def add_event(self, job_id: str, event_type: str, details: dict[str, Any]) -> None:
         with self.connect() as conn:

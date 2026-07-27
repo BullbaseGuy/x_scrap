@@ -700,6 +700,26 @@ async def test_split_child_scope_resumes_from_its_own_committed_cursor(tmp_path)
     )
     db.add_windows(job_id, "search", [parent])
     parent_id = db.all_windows(job_id)[0]["window_id"]
+    parent_scope = f"window:{parent_id}"
+    service.pages.ensure_scope(job_id, parent_scope, "search")
+    parent_page = CollectorPage(
+        source="search",
+        operation="SearchTimeline",
+        request_cursor=None,
+        next_cursor="seeded-parent-cursor",
+        items=(),
+        raw_payload={"tweets": [], "next_cursor": "seeded-parent-cursor"},
+        page_index=0,
+    )
+    parent_artifact = service.raw_store.write_content_addressed_json(
+        Path(job_id) / "pages" / "seed-parent",
+        parent_page.artifact_payload(),
+        prefix="page-000000",
+    )
+    service.pages.commit_page(
+        job_id, parent_scope, parent_page, parent_artifact, []
+    )
+    service.pages.limit_scope(job_id, parent_scope, "SEEDED_SPLIT")
     db.update_window(parent_id, status="SPLIT", terminal_reason="SEEDED_SPLIT")
     db.add_windows(job_id, "search", [left, right])
 

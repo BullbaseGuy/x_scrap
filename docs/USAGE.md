@@ -86,3 +86,25 @@ The Cookie must be entered through the no-echo prompt. Supplying it as a command
 `X_SCRAP_HOME` cannot be located inside a Git worktree. On POSIX systems, runtime directories are set to `0700` and databases/evidence/exports to `0600`. On Windows, select a directory protected by the current user's ACL; the application does not claim or add encryption.
 
 The session database contains local plaintext browser-session material. Back it up only to an encrypted location, never commit it, and rotate the X session after suspected disclosure.
+
+## 7. Verify an export bundle
+
+```powershell
+python -c "from pathlib import Path; from x_scrap.export import verify_export_bundle; print(verify_export_bundle(Path(r'D:\x_scrap_data\exports\USER\JOB'))['bundle_digest'])"
+```
+
+A valid bundle contains `inventory.json`, `errors.jsonl`, and `conflicts.jsonl`. `SOURCE_CONFLICT` means two sources returned materially different author, timestamp, text, conversation, reply, quote, or repost fields for the same post ID. `PARTIAL_UNRESOLVED_WINDOWS` also covers evidence-graph inconsistencies such as missing raw files, cursor discontinuity, gaps, overlaps, or scope/window disagreement.
+
+## 8. Local authenticated smoke test
+
+The helper refuses GitHub Actions and requires an explicit acknowledgement before any X request:
+
+```powershell
+python scripts/live/run_user_export_smoke.py --home D:\x_scrap_data --preflight-only
+python scripts/live/run_user_export_smoke.py xdevelopers `
+  --home D:\x_scrap_data `
+  --start 2026-07-01T00:00:00Z `
+  --acknowledge-live-x
+```
+
+Never pass Cookie values as command-line arguments. Add them once through the no-echo `x-scrap auth add-cookie` prompt.

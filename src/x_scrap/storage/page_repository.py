@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import sqlite3
 from pathlib import Path
 from typing import Any
@@ -114,6 +113,15 @@ class PageRepository:
                 (job_id, scope_key),
             ).fetchone()
         return redact_value(dict(row)) if row else None
+
+    def list_scopes(self, job_id: str) -> list[dict[str, Any]]:
+        with self.database.connect() as conn:
+            rows = conn.execute(
+                """SELECT * FROM harvest_scopes WHERE job_id=?
+                ORDER BY scope_key""",
+                (job_id,),
+            ).fetchall()
+        return [redact_value(dict(row)) for row in rows]
 
     def commit_page(
         self,
@@ -268,6 +276,27 @@ class PageRepository:
             ).fetchall()
         return [str(row["post_id"]) for row in rows]
 
+    def list_page_post_links(self, job_id: str) -> list[dict[str, Any]]:
+        with self.database.connect() as conn:
+            rows = conn.execute(
+                """SELECT links.scope_key, links.page_index, links.post_id, pages.source
+                FROM harvest_page_posts AS links
+                JOIN harvest_pages AS pages
+                  ON pages.job_id=links.job_id
+                 AND pages.scope_key=links.scope_key
+                 AND pages.page_index=links.page_index
+                WHERE links.job_id=?
+                ORDER BY links.scope_key, links.page_index, links.post_id""",
+                (job_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def linked_post_sources(self, job_id: str) -> dict[str, list[str]]:
+        sources: dict[str, set[str]] = {}
+        for link in self.list_page_post_links(job_id):
+            sources.setdefault(str(link["post_id"]), set()).add(str(link["source"]))
+        return {post_id: sorted(values) for post_id, values in sorted(sources.items())}
+
     def scope_stats(self, job_id: str, scope_key: str) -> dict[str, Any]:
         with self.database.connect() as conn:
             row = conn.execute(
@@ -295,32 +324,4 @@ class PageRepository:
     def _upsert_post(
         conn: sqlite3.Connection, job_id: str, post: PostRecord, now: str | None
     ) -> None:
-        payload = post.to_json()
-        existing = conn.execute(
-            "SELECT source_set FROM posts WHERE job_id=? AND post_id=?",
-            (job_id, post.post_id),
-        ).fetchone()
-        if existing:
-            sources = set(json.loads(existing["source_set"]))
-            sources.add(post.source)
-            conn.execute(
-                """UPDATE posts SET source_set=?, payload=?, updated_at=?
-                WHERE job_id=? AND post_id=?""",
-                (json.dumps(sorted(sources)), payload, now, job_id, post.post_id),
-            )
-            return
-        conn.execute(
-            """INSERT INTO posts
-            (job_id, post_id, created_at, username, source_set, payload, first_seen_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                job_id,
-                post.post_id,
-                iso_utc(post.created_at),
-                post.username,
-                json.dumps([post.source]),
-                payload,
-                now,
-                now,
-            ),
-        )
+        Database._upsert_post_connection(conn, job_id, post, now)

@@ -16,7 +16,7 @@ from x_scrap.adapters.base import (
     TransientUpstreamError,
     UpstreamChanged,
 )
-from x_scrap.audit.coverage import audit_coverage
+from x_scrap.audit.coverage import audit_collection
 from x_scrap.domain.models import (
     CoverageStatus,
     JobStatus,
@@ -33,6 +33,7 @@ from x_scrap.domain.pages import CollectorPage
 from x_scrap.export.writer import write_export
 from x_scrap.harvest.window_planner import build_search_query, make_windows, split_window
 from x_scrap.runtime.heartbeat import Heartbeat
+from x_scrap.runtime.recovery import RecoveryBudget
 from x_scrap.runtime.retry import RetryPolicy
 from x_scrap.storage.database import Database
 from x_scrap.storage.page_repository import PageRepository
@@ -59,6 +60,7 @@ class UserExportService:
         raw_root: Path,
         retry_policy: RetryPolicy | None = None,
         sleep: Callable[[float], Any] = asyncio.sleep,
+        clock: Callable[[], datetime] = utc_now,
         heartbeat_interval: float = 45.0,
     ):
         self.adapter = adapter
@@ -68,6 +70,7 @@ class UserExportService:
         self.raw_store = RawStore(raw_root)
         self.retry_policy = retry_policy or RetryPolicy()
         self.sleep = sleep
+        self.clock = clock
         self.heartbeat_interval = heartbeat_interval
 
     async def export_user(
@@ -211,7 +214,22 @@ class UserExportService:
                     )
 
                 windows = self.db.all_windows(job_id)
-                coverage = audit_coverage(windows, start, cutoff)
+                scopes = self.pages.list_scopes(job_id)
+                page_rows = self.pages.list_pages(job_id)
+                page_links = self.pages.list_page_post_links(job_id)
+                posts = list(self.db.iter_posts(job_id))
+                conflicts = self.db.list_post_conflicts(job_id)
+                coverage = audit_collection(
+                    windows,
+                    start,
+                    cutoff,
+                    scopes=scopes,
+                    pages=page_rows,
+                    page_links=page_links,
+                    posts=posts,
+                    conflicts=conflicts,
+                    raw_root=self.raw_store.root,
+                )
                 if timeline_suspect_empty:
                     coverage["warnings"] = [
                         *coverage.get("warnings", []),
@@ -223,35 +241,60 @@ class UserExportService:
                     if coverage_status == CoverageStatus.COMPLETE_PUBLICLY_RETRIEVABLE.value
                     else JobStatus.PARTIAL
                 )
-                self.db.update_job(
+                self.db.add_event(
                     job_id,
-                    status=final_status,
-                    coverage_status=coverage_status,
+                    "COLLECTION_AUDITED",
+                    {
+                        "coverage_status": coverage_status,
+                        "integrity_status": coverage["integrity"]["status"],
+                        "conflict_count": len(conflicts),
+                    },
                 )
+                events = self.db.list_events(job_id)
                 manifest = {
-                    "schema_version": "1.1.0",
+                    "schema_version": "2.0.0",
                     "job_id": job_id,
                     "username": user.username,
                     "requested_username": username,
                     "user_id": user.user_id,
                     "start_at": iso_utc(start),
                     "cutoff_at": iso_utc(cutoff),
-                    "post_count": self.db.count_posts(job_id),
-                    "page_count": self.pages.count_pages(job_id),
+                    "post_count": len(posts),
+                    "page_count": len(page_rows),
+                    "conflict_count": len(conflicts),
                     "coverage_status": coverage_status,
-                    "completed_at": iso_utc(utc_now()),
+                    "completed_at": self.db.latest_evidence_at(job_id),
                     "collector": "x_scrap",
                     "adapter": type(self.adapter).__name__,
                 }
-                write_export(
+                inventory = write_export(
                     output_dir,
                     manifest=manifest,
                     profile=profile,
                     coverage=coverage,
-                    posts=self.db.iter_posts(job_id),
+                    posts=posts,
+                    events=events,
+                    conflicts=conflicts,
+                    scopes=scopes,
+                    windows=windows,
+                    pages=page_rows,
+                    raw_root=self.raw_store.root,
                 )
-                self.db.add_event(job_id, "JOB_FINISHED", manifest)
-                return {**manifest, "output_dir": str(output_dir)}
+                self.db.update_job(
+                    job_id,
+                    status=final_status,
+                    coverage_status=coverage_status,
+                )
+                self.db.add_event(
+                    job_id,
+                    "JOB_FINISHED",
+                    {**manifest, "bundle_digest": inventory["bundle_digest"]},
+                )
+                return {
+                    **manifest,
+                    "bundle_digest": inventory["bundle_digest"],
+                    "output_dir": str(output_dir),
+                }
         except AuthRequired as exc:
             self.db.update_job(
                 job_id,
@@ -311,18 +354,20 @@ class UserExportService:
             ),
         ]
         for source, scope_key, factory in sources:
-            scope = self.pages.ensure_scope(job_id, scope_key, source)
-            if scope["state"] == "COMPLETE":
-                continue
-            if scope["state"] == "EXHAUSTED":
-                self.pages.complete_scope(job_id, scope_key)
-                continue
+            recovery = RecoveryBudget(self.retry_policy)
+            while True:
+                scope = self.pages.ensure_scope(job_id, scope_key, source)
+                if scope["state"] == "COMPLETE":
+                    break
+                if scope["state"] == "EXHAUSTED":
+                    self.pages.complete_scope(job_id, scope_key)
+                    break
 
-            stats = self.pages.scope_stats(job_id, scope_key)
-            remaining = -1 if limit < 0 else max(0, limit - int(stats["item_count"]))
-            if remaining == 0:
-                self.pages.limit_scope(job_id, scope_key, "CONFIGURED_TIMELINE_LIMIT")
-            else:
+                stats = self.pages.scope_stats(job_id, scope_key)
+                remaining = -1 if limit < 0 else max(0, limit - int(stats["item_count"]))
+                if remaining == 0:
+                    self.pages.limit_scope(job_id, scope_key, "CONFIGURED_TIMELINE_LIMIT")
+                    break
                 try:
                     stream = factory(
                         user_id,
@@ -344,6 +389,15 @@ class UserExportService:
                         scope_key,
                         allow_limit=limit > 0,
                         limit_reason="CONFIGURED_TIMELINE_LIMIT",
+                    )
+                    break
+                except (RateLimited, TransientUpstreamError) as exc:
+                    self.pages.fail_scope(job_id, scope_key, type(exc).__name__)
+                    await self._recover_scope(
+                        job_id,
+                        scope_key,
+                        exc,
+                        recovery,
                     )
                 except Exception as exc:
                     self.pages.fail_scope(job_id, scope_key, type(exc).__name__)
@@ -385,6 +439,7 @@ class UserExportService:
         min_window_seconds: int,
         max_posts_per_window: int,
     ) -> None:
+        recoveries: dict[str, RecoveryBudget] = {}
         while True:
             pending = self.db.pending_windows(job_id)
             if not pending:
@@ -410,25 +465,28 @@ class UserExportService:
                     expected_user_id=user_id,
                 )
             except (RateLimited, TransientUpstreamError) as exc:
-                if attempts > self.retry_policy.infrastructure_retry_limit:
+                recovery = recoveries.setdefault(
+                    window_id, RecoveryBudget(self.retry_policy)
+                )
+                self.db.update_window(window_id, status=WindowStatus.PENDING)
+                try:
+                    await self._recover_scope(
+                        job_id,
+                        f"window:{window_id}",
+                        exc,
+                        recovery,
+                        window_id=window_id,
+                    )
+                except (RateLimited, TransientUpstreamError):
                     self.db.update_window(
                         window_id,
                         status=WindowStatus.FAILED,
-                        terminal_reason=type(exc).__name__,
+                        terminal_reason="RECOVERY_BUDGET_EXHAUSTED",
                     )
                     raise
-                self.db.update_job(job_id, status=JobStatus.WAITING_RATE_LIMIT)
-                self.db.update_window(window_id, status=WindowStatus.PENDING)
-                delay = self.retry_policy.delay_for_attempt(attempts)
-                self.db.add_event(
-                    job_id,
-                    "RECOVERABLE_ERROR",
-                    {"window_id": window_id, "error": type(exc).__name__, "delay": delay},
-                )
-                await self.sleep(delay)
-                self.db.update_job(job_id, status=JobStatus.RUNNING)
                 continue
 
+            recoveries.pop(window_id, None)
             exhausted = bool(stats["exhausted"])
             if not exhausted and window.duration_seconds > min_window_seconds:
                 left, right = split_window(window)
@@ -593,6 +651,38 @@ class UserExportService:
             self.pages.limit_scope(job_id, scope_key, limit_reason)
             return False
         raise UpstreamChanged(f"{scope_key} stopped while a pagination cursor remained")
+
+    async def _recover_scope(
+        self,
+        job_id: str,
+        scope_key: str,
+        exc: RateLimited | TransientUpstreamError,
+        recovery: RecoveryBudget,
+        *,
+        window_id: str | None = None,
+    ) -> None:
+        decision = recovery.decide(exc, now=self.clock())
+        details = {
+            "scope_key": scope_key,
+            "window_id": window_id,
+            "category": decision.category,
+            "attempt": decision.attempt,
+            "delay_seconds": decision.delay_seconds,
+            "root_cause": decision.root_cause,
+            "reset_at": decision.reset_at,
+            "exhausted_reason": decision.exhausted_reason,
+        }
+        if not decision.retry:
+            self.db.add_event(job_id, "RECOVERY_EXHAUSTED", details)
+            raise exc
+        if isinstance(exc, RateLimited):
+            self.db.update_job(job_id, status=JobStatus.WAITING_RATE_LIMIT)
+            event_type = "RATE_LIMIT_WAIT"
+        else:
+            event_type = "TRANSIENT_RETRY"
+        self.db.add_event(job_id, event_type, details)
+        await self.sleep(decision.delay_seconds)
+        self.db.update_job(job_id, status=JobStatus.RUNNING)
 
     def _search_scope_stats(
         self, job_id: str, scope_key: str, *, exhausted: bool

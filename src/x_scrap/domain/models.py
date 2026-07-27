@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field, is_dataclass
@@ -81,6 +82,34 @@ def jsonable(value: Any) -> Any:
     if isinstance(value, (list, tuple, set)):
         return [jsonable(v) for v in value]
     return value
+
+
+POST_MATERIAL_FIELDS = (
+    "post_id",
+    "user_id",
+    "created_at",
+    "text",
+    "conversation_id",
+    "in_reply_to_post_id",
+    "quoted_post_id",
+    "reposted_post_id",
+)
+
+
+def post_material_payload(value: Mapping[str, Any]) -> dict[str, Any]:
+    """Return the stable fields whose disagreement is a source conflict."""
+
+    return {field: jsonable(value.get(field)) for field in POST_MATERIAL_FIELDS}
+
+
+def post_material_sha256(value: Mapping[str, Any]) -> str:
+    encoded = json.dumps(
+        post_material_payload(value),
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def object_mapping(value: Any) -> dict[str, Any]:

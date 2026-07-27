@@ -130,3 +130,23 @@ Only the stable JSON response body is stored in the gzip artifact. Capture time,
 The CLI has no Cookie argv surface. The interactive prompt passes the Cookie directly to the adapter, which forces upstream telemetry off and re-applies private permissions to the account database after initialization and mutation. The database layer redacts error fields and event payloads before storage. Raw and export writers use private temporary files followed by atomic replacement.
 
 State initialization rejects paths below a conventional Git worktree. POSIX modes are enforced where supported; Windows behavior is intentionally limited to inherited ACLs and is documented without an encryption claim.
+
+## Evidence graph and publication
+
+W07 treats the persisted job as an evidence graph rather than trusting one status flag:
+
+```text
+frozen range
+  └─ exact terminal leaf-window partition
+       └─ one search scope per window (including split parents)
+            └─ contiguous pages and cursor chain
+                 ├─ immutable gzip JSON + SHA-256
+                 └─ page-to-post provenance
+                      └─ canonical post + all source memberships
+```
+
+A complete status requires every layer to agree. Materially different normalized observations for one post ID are stored in `post_conflicts` and produce `SOURCE_CONFLICT`. Export files are built under a private staging directory, self-verified through `inventory.json`, and published with rollback-aware directory replacement.
+
+## Recovery controller
+
+Each harvest scope owns an in-process `RecoveryBudget`. Reset-aware 429 waits are separate from transient retry counters. Transient failures are grouped by a redacted, normalized root-cause fingerprint so unchanged failures cannot loop blindly. Timeline and search retries reread the persisted scope and therefore continue from the cursor committed by the last successful page.

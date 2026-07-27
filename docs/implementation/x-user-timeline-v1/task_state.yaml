@@ -1,30 +1,30 @@
 {
   "schema_version": 2,
-  "state_revision": 8,
+  "state_revision": 9,
   "task_id": "x-user-timeline-v1",
   "title": "Public X user timeline export with resumable historical coverage",
-  "status": "RUNNING",
-  "execution_status": "RUNNING",
+  "status": "WAITING_HUMAN",
+  "execution_status": "BLOCKED",
   "acceptance": {
     "domain": "x-public-data-collection",
     "status": "PENDING",
-    "reason_code": null,
-    "details_path": "docs/implementation/x-user-timeline-v1/STATUS.md"
+    "reason_code": "LIVE_E2E_REQUIRED",
+    "details_path": "docs/implementation/x-user-timeline-v1/W09_plan.md"
   },
   "security_status": "PENDING",
   "working_branch": "feature/x-user-timeline-v1",
   "pull_request": 2,
-  "current_stage": "W07",
-  "last_completed_stage": "W06",
+  "current_stage": "W09",
+  "last_completed_stage": "W08",
   "post_merge": {
     "status": "PENDING",
     "commit_sha": null
   },
   "human_gate": {
-    "required": false,
-    "reason": null,
-    "minimum_action": null,
-    "resume_from": null
+    "required": true,
+    "reason": "W09 requires the user's authorized local X browser session and a real interruption/resume run; credentials must not enter GitHub or chat.",
+    "minimum_action": "Run the W09 preflight and authenticated smoke commands from W09_plan.md locally, then provide only the redacted job/coverage/bundle and resume evidence.",
+    "resume_from": "W09 local opt-in authenticated E2E"
   },
   "notification": {
     "control_issue_number": 1,
@@ -33,15 +33,15 @@
   },
   "base_sha_at_start": "340bf6774ae1d2942b581b2ed2eaf660c9ff84eb",
   "last_product_commit_sha": "a3633c8588bf51c7d69c8f5602c8b431a9a449f6",
-  "last_successful_step": "W06 stable-ID historical search and exact recursive windows passed local deterministic validation",
-  "next_action": "Implement W07 cross-layer coverage consistency, conflict detection, and atomic self-verifying exports",
-  "updated_at_utc": "2026-07-27T13:59:32Z",
+  "last_successful_step": "W07 evidence-graph/export hardening and W08 reset-aware automatic recovery passed 83 deterministic local tests",
+  "next_action": "Publish W07-W08 through the atomic gate, then run the W09 local authenticated preflight and interruption/resume E2E without sharing Cookie values",
+  "updated_at_utc": "2026-07-27T14:44:38Z",
   "gate_results": {
-    "compile": "PASS_W06_APPLY_WORKFLOW",
-    "pytest": "PASS_69_W06_APPLY_WORKFLOW",
-    "ruff": "PASS_W06_APPLY_WORKFLOW",
-    "state": "PASS_W06_APPLY_WORKFLOW",
-    "secret_audit": "PASS_W06_APPLY_WORKFLOW"
+    "compile": "PASS_83_LOCAL",
+    "pytest": "PASS_83_LOCAL",
+    "ruff": "PENDING_ATOMIC_APPLY",
+    "state": "PASS_LOCAL",
+    "secret_audit": "PASS_LOCAL"
   },
   "retry_budget": {
     "infrastructure_limit": 3,

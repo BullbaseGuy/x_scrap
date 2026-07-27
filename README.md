@@ -127,3 +127,16 @@ See [usage](docs/USAGE.md), [architecture](docs/architecture/ARCHITECTURE.md), a
 The Cookie is accepted only through a no-echo prompt; the CLI intentionally has no `--cookie` option. `X_SCRAP_HOME` must be outside a Git worktree. POSIX state directories are restricted to `0700` and files to `0600`; Windows relies on the selected directory's inherited ACL. The local `twscrape` account database is plaintext SQLite protected by OS access controls, not encrypted by this project.
 
 Credential-shaped values are centrally redacted before persisted errors, events, account-list output, and top-level CLI errors. GitHub Actions never receive a real Cookie or collected dataset. See [Security policy](docs/security/SECURITY.md) and [Threat model](docs/security/THREAT_MODEL.md).
+
+## Verified bundle and recovery guarantees
+
+Every completed or partial export is assembled in a private staging directory and published only after `inventory.json` verifies the required files, hashes, byte sizes, record counts, JSONL/CSV identity, string IDs, UTC timestamps, and stable ordering. Material disagreements for one post ID are preserved in `conflicts.jsonl` and produce `SOURCE_CONFLICT`; missing or inconsistent window/scope/page/raw evidence cannot be labeled complete.
+
+Rate limits and transient failures follow separate policies. A known 429 reset time is honored with a safety margin and the same scope resumes from its last committed cursor. Transient errors use bounded exponential retry and a same-root-cause limit. Schema changes and login challenges are not retried as empty data.
+
+The authenticated smoke runner is local-only and refuses CI:
+
+```powershell
+python scripts/live/run_user_export_smoke.py --home D:\x_scrap_data --preflight-only
+python scripts/live/run_user_export_smoke.py xdevelopers --home D:\x_scrap_data --acknowledge-live-x
+```
