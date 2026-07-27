@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "state_revision": 13,
+  "state_revision": 14,
   "task_id": "x-user-timeline-v1",
   "title": "Public X user timeline export with resumable historical coverage",
   "status": "WAITING_HUMAN",
@@ -33,16 +33,16 @@
   },
   "base_sha_at_start": "340bf6774ae1d2942b581b2ed2eaf660c9ff84eb",
   "last_product_commit_sha": "3786a3150c5539fd23816b79b3e94ef45de6fb21",
-  "last_successful_step": "W09 redacted evidence collector and runbook were atomically published after compile, Ruff, 85 tests, task-state validation, secret audit, and diff checks passed",
-  "next_action": "Pass permanent CI for this connector-authored state commit, then run the local authenticated W09 interruption/resume E2E without sharing Cookie values",
-  "updated_at_utc": "2026-07-27T15:31:28Z",
+  "last_successful_step": "W09 redacted evidence collector and runbook passed permanent Test, Product Gate, State Consistency, and Secret Audit workflows with 85 deterministic tests",
+  "next_action": "Run the local authenticated W09 preflight and interruption/resume E2E, then share only the generated redacted evidence JSON",
+  "updated_at_utc": "2026-07-27T15:33:47Z",
   "gate_results": {
-    "compile": "PASS_ATOMIC_APPLY",
-    "pytest": "PASS_85_ATOMIC_APPLY",
-    "ruff": "PASS_ATOMIC_APPLY",
-    "product_gate": "PASS_ATOMIC_APPLY",
-    "state": "PASS_ATOMIC_APPLY",
-    "secret_audit": "PASS_ATOMIC_APPLY"
+    "compile": "PASS_CI",
+    "pytest": "PASS_85_CI",
+    "ruff": "PASS_CI",
+    "product_gate": "PASS_CI",
+    "state": "PASS_CI",
+    "secret_audit": "PASS_CI"
   },
   "retry_budget": {
     "infrastructure_limit": 3,

@@ -23,7 +23,7 @@
 - W07 exact evidence-graph coverage validation, same-ID material conflict preservation, `SOURCE_CONFLICT`, immutable raw verification, and atomic self-verifying export bundles.
 - W08 reset-aware 429 waits, automatic cursor resume for timelines and search, root-cause retry budgets, explicit recovery events, and non-recoverable error separation.
 - W09 now includes a redacted evidence collector that verifies the export bundle, summarizes page/window/recovery counts, and proves cursor continuity with SHA-256 fingerprints rather than plaintext cursor values.
-- The W09 helper atomic publication gate passed compile, Ruff, all 85 deterministic tests, task-state validation, secret audit, and `git diff --check`.
+- The W09 helper atomic publication gate and the permanent Test, Product Gate, State Consistency, and Secret Audit workflows all passed with 85 deterministic tests.
 - All temporary write-capable, diagnostic, archive, and bootstrap files were removed in the same publication commit.
 
 ## Human gate — W09
