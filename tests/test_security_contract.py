@@ -18,8 +18,8 @@ def test_repository_has_no_high_confidence_secret_material():
     assert result["status"] == "PASS", result
 
 
-def test_twscrape_telemetry_is_disabled_before_import():
+def test_twscrape_telemetry_is_forced_off_before_import():
     source = (ROOT / "src/x_scrap/adapters/twscrape_adapter.py").read_text(encoding="utf-8")
-    assert source.index('os.environ.setdefault("TWS_TELEMETRY", "0")') < source.index(
-        "from twscrape import API"
-    )
+    assert source.index("_disable_upstream_telemetry()") < source.index("from twscrape import API")
+    assert 'os.environ["TWS_TELEMETRY"] = "0"' in source
+    assert 'os.environ["DO_NOT_TRACK"] = "1"' in source
