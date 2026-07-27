@@ -43,9 +43,10 @@ def _page(
 
 
 def _artifact(store: RawStore, job_id: str, page: CollectorPage):
-    return store.write_json(
-        Path(job_id) / "pages" / "search" / f"page-{page.page_index:06d}.json.gz",
+    return store.write_content_addressed_json(
+        Path(job_id) / "pages" / "search",
         page.artifact_payload(),
+        prefix=f"page-{page.page_index:06d}",
     )
 
 
