@@ -7,6 +7,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from x_scrap.domain.pages import CollectorPage
+
 from .base import AuthRequired, RateLimited, TransientUpstreamError, UpstreamChanged
 
 _COOKIE_SECRET_RE = re.compile(r"(?i)(\b(?:auth_token|ct0)\s*=\s*)([^;\s]+)")
@@ -16,20 +18,22 @@ _REQUIRED_COOKIE_NAMES = ("auth_token", "ct0")
 class TwscrapeAdapter:
     """Thin compatibility boundary around twscrape.
 
-    All twscrape-specific imports, cookie handling, redaction, and exception
-    heuristics live here so an upstream release can be repaired without
-    changing the harvesting core.
+    All twscrape-specific imports, cookie handling, redaction, pagination,
+    and exception heuristics live here so an upstream release can be repaired
+    without changing the harvesting core.
     """
 
     def __init__(self, accounts_db: str | Path, *, proxy: str | None = None):
         _disable_upstream_telemetry()
         try:
             from twscrape import API
+            from twscrape.models import parse_tweets
         except ImportError as exc:
             raise RuntimeError(
                 "twscrape is not installed; install the project with `pip install -e .`"
             ) from exc
         self._api = API(str(accounts_db), proxy=proxy)
+        self._parse_tweets = parse_tweets
 
     async def add_cookie(self, label: str, cookie_header: str) -> None:
         label = label.strip()
@@ -59,28 +63,118 @@ class TwscrapeAdapter:
             raise UpstreamChanged(f"no user payload returned for @{username.lstrip('@')}")
         return result
 
+    async def iter_user_tweet_pages(
+        self, user_id: str, *, cursor: str | None = None, limit: int = -1
+    ) -> AsyncIterator[CollectorPage]:
+        values = {"cursor": cursor} if cursor else None
+        stream = self._api.user_tweets_raw(int(user_id), limit=limit, kv=values)
+        async for page in self._guarded_pages(
+            stream,
+            source="user_tweets",
+            operation="UserTweets",
+            initial_cursor=cursor,
+        ):
+            yield page
+
+    async def iter_user_tweet_and_reply_pages(
+        self, user_id: str, *, cursor: str | None = None, limit: int = -1
+    ) -> AsyncIterator[CollectorPage]:
+        values = {"cursor": cursor} if cursor else None
+        stream = self._api.user_tweets_and_replies_raw(int(user_id), limit=limit, kv=values)
+        async for page in self._guarded_pages(
+            stream,
+            source="user_tweets_and_replies",
+            operation="UserTweetsAndReplies",
+            initial_cursor=cursor,
+        ):
+            yield page
+
+    async def iter_search_pages(
+        self, query: str, *, cursor: str | None = None, limit: int = -1
+    ) -> AsyncIterator[CollectorPage]:
+        values = {"cursor": cursor} if cursor else None
+        stream = self._api.search_raw(query, limit=limit, kv=values)
+        async for page in self._guarded_pages(
+            stream,
+            source="search",
+            operation="SearchTimeline",
+            initial_cursor=cursor,
+        ):
+            yield page
+
     async def iter_user_tweets(self, user_id: str, *, limit: int = -1) -> AsyncIterator[Any]:
-        try:
-            async for item in self._api.user_tweets(int(user_id), limit=limit):
+        async for page in self.iter_user_tweet_pages(user_id, limit=limit):
+            for item in page.items:
                 yield item
-        except Exception as exc:
-            raise _classify(exc) from exc
 
     async def iter_user_tweets_and_replies(
         self, user_id: str, *, limit: int = -1
     ) -> AsyncIterator[Any]:
-        try:
-            async for item in self._api.user_tweets_and_replies(int(user_id), limit=limit):
+        async for page in self.iter_user_tweet_and_reply_pages(user_id, limit=limit):
+            for item in page.items:
                 yield item
+
+    async def iter_search(self, query: str, *, limit: int = -1) -> AsyncIterator[Any]:
+        async for page in self.iter_search_pages(query, limit=limit):
+            for item in page.items:
+                yield item
+
+    async def _guarded_pages(
+        self,
+        stream: AsyncIterator[Any],
+        *,
+        source: str,
+        operation: str,
+        initial_cursor: str | None,
+    ) -> AsyncIterator[CollectorPage]:
+        try:
+            async for page in self._iter_pages(
+                stream,
+                source=source,
+                operation=operation,
+                initial_cursor=initial_cursor,
+            ):
+                yield page
+        except (AuthRequired, RateLimited, TransientUpstreamError, UpstreamChanged):
+            raise
         except Exception as exc:
             raise _classify(exc) from exc
 
-    async def iter_search(self, query: str, *, limit: int = -1) -> AsyncIterator[Any]:
-        try:
-            async for item in self._api.search(query, limit=limit):
-                yield item
-        except Exception as exc:
-            raise _classify(exc) from exc
+    async def _iter_pages(
+        self,
+        stream: AsyncIterator[Any],
+        *,
+        source: str,
+        operation: str,
+        initial_cursor: str | None,
+    ) -> AsyncIterator[CollectorPage]:
+        request_cursor = initial_cursor
+        seen_cursors = {initial_cursor} if initial_cursor else set()
+        page_index = 0
+        async for response in stream:
+            payload = response.json()
+            if not isinstance(payload, dict):
+                raise UpstreamChanged(f"{operation} returned a non-object JSON payload")
+            next_cursor = _bottom_cursor(payload)
+            if next_cursor is not None and next_cursor in seen_cursors:
+                raise UpstreamChanged(f"{operation} returned a repeated pagination cursor")
+            if next_cursor is not None:
+                seen_cursors.add(next_cursor)
+            try:
+                items = tuple(self._parse_tweets(payload, -1))
+            except Exception as exc:
+                raise UpstreamChanged(f"{operation} response parsing failed: {exc}") from exc
+            yield CollectorPage(
+                source=source,
+                operation=operation,
+                request_cursor=request_cursor,
+                next_cursor=next_cursor,
+                items=items,
+                raw_payload=payload,
+                page_index=page_index,
+            )
+            request_cursor = next_cursor
+            page_index += 1
 
 
 def _disable_upstream_telemetry() -> None:
@@ -112,6 +206,48 @@ def _redact_secret_text(value: object | None) -> str | None:
         return None
     text = str(value)
     return _COOKIE_SECRET_RE.sub(lambda match: f"{match.group(1)}<redacted>", text)
+
+
+def _bottom_cursor(payload: dict[str, Any]) -> str | None:
+    cursor = _find_cursor_type(payload, "Bottom")
+    if cursor is not None:
+        return cursor
+    return _find_named_cursor(payload, "next_cursor")
+
+
+def _find_cursor_type(value: Any, cursor_type: str) -> str | None:
+    if isinstance(value, dict):
+        if value.get("cursorType") == cursor_type:
+            cursor = value.get("value")
+            if isinstance(cursor, str) and cursor:
+                return cursor
+        for child in value.values():
+            cursor = _find_cursor_type(child, cursor_type)
+            if cursor is not None:
+                return cursor
+    elif isinstance(value, list):
+        for child in value:
+            cursor = _find_cursor_type(child, cursor_type)
+            if cursor is not None:
+                return cursor
+    return None
+
+
+def _find_named_cursor(value: Any, key: str) -> str | None:
+    if isinstance(value, dict):
+        cursor = value.get(key)
+        if isinstance(cursor, str) and cursor:
+            return cursor
+        for child in value.values():
+            cursor = _find_named_cursor(child, key)
+            if cursor is not None:
+                return cursor
+    elif isinstance(value, list):
+        for child in value:
+            cursor = _find_named_cursor(child, key)
+            if cursor is not None:
+                return cursor
+    return None
 
 
 def _reset_at(exc: Exception) -> datetime | None:
