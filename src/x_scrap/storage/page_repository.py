@@ -60,6 +60,20 @@ class PageRepository:
                 );
                 CREATE INDEX IF NOT EXISTS idx_harvest_pages_cursor
                     ON harvest_pages(job_id, scope_key, next_cursor);
+
+                CREATE TABLE IF NOT EXISTS harvest_page_posts (
+                    job_id TEXT NOT NULL,
+                    scope_key TEXT NOT NULL,
+                    page_index INTEGER NOT NULL,
+                    post_id TEXT NOT NULL,
+                    PRIMARY KEY(job_id, scope_key, page_index, post_id),
+                    FOREIGN KEY(job_id, scope_key, page_index)
+                        REFERENCES harvest_pages(job_id, scope_key, page_index) ON DELETE CASCADE,
+                    FOREIGN KEY(job_id, post_id)
+                        REFERENCES posts(job_id, post_id) ON DELETE CASCADE
+                );
+                CREATE INDEX IF NOT EXISTS idx_harvest_page_posts_post
+                    ON harvest_page_posts(job_id, post_id);
                 """
             )
             self._ensure_column(conn, "harvest_pages", "oldest_post_at", "TEXT")
@@ -108,10 +122,11 @@ class PageRepository:
         artifact: RawArtifact,
         posts: list[PostRecord],
     ) -> bool:
-        """Commit page metadata, normalized posts, and the next cursor together."""
+        """Commit page metadata, normalized posts, links, and next cursor together."""
 
         now = iso_utc(utc_now())
-        post_times = [post.created_at for post in posts]
+        unique_posts = {post.post_id: post for post in posts}
+        post_times = [post.created_at for post in unique_posts.values()]
         oldest_post_at = iso_utc(min(post_times)) if post_times else None
         newest_post_at = iso_utc(max(post_times)) if post_times else None
         with self.database.connect() as conn:
@@ -182,15 +197,20 @@ class PageRepository:
                     str(Path(artifact.path)),
                     artifact.size,
                     len(page.items),
-                    len(posts),
+                    len(unique_posts),
                     oldest_post_at,
                     newest_post_at,
                     iso_utc(page.captured_at),
                     now,
                 ),
             )
-            for post in posts:
+            for post in unique_posts.values():
                 self._upsert_post(conn, job_id, post, now)
+                conn.execute(
+                    """INSERT INTO harvest_page_posts(job_id, scope_key, page_index, post_id)
+                    VALUES (?, ?, ?, ?)""",
+                    (job_id, scope_key, page.page_index, post.post_id),
+                )
             next_state = "EXHAUSTED" if page.next_cursor is None else "RUNNING"
             conn.execute(
                 """UPDATE harvest_scopes
@@ -237,6 +257,15 @@ class PageRepository:
                     (job_id, scope_key),
                 ).fetchall()
         return [dict(row) for row in rows]
+
+    def page_post_ids(self, job_id: str, scope_key: str, page_index: int) -> list[str]:
+        with self.database.connect() as conn:
+            rows = conn.execute(
+                """SELECT post_id FROM harvest_page_posts
+                WHERE job_id=? AND scope_key=? AND page_index=? ORDER BY post_id""",
+                (job_id, scope_key, page_index),
+            ).fetchall()
+        return [str(row["post_id"]) for row in rows]
 
     def scope_stats(self, job_id: str, scope_key: str) -> dict[str, Any]:
         with self.database.connect() as conn:
