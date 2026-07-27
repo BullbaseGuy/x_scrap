@@ -22,18 +22,30 @@
 - W06 canonical resolved-username search, stable-user-ID enforcement, whole-second half-open windows, integer midpoint splits, noisy-result filtering, dense-window recursion, and independent child-scope resume.
 - W07 exact evidence-graph coverage validation, same-ID material conflict preservation, `SOURCE_CONFLICT`, immutable raw verification, and atomic self-verifying export bundles.
 - W08 reset-aware 429 waits, automatic cursor resume for timelines and search, root-cause retry budgets, explicit recovery events, and non-recoverable error separation.
-- W09 now includes a redacted evidence collector that verifies the export bundle, summarizes page/window/recovery counts, and proves cursor continuity with SHA-256 fingerprints rather than plaintext cursor values.
-- The W09 helper atomic publication gate and the permanent Test, Product Gate, State Consistency, and Secret Audit workflows all passed with 85 deterministic tests.
-- All temporary write-capable, diagnostic, archive, and bootstrap files were removed in the same publication commit.
+- W09 deterministic preparation now includes a one-command Windows orchestrator, four live cases, an exact committed-cursor resume contract, strict sanitized evidence, and automatic `W09_ACCEPTANCE.json` generation.
+- The W09 preparation publication passed SHA-256 reconstruction, Python compilation, Ruff, the complete pytest suite, canonical task-state validation, repository secret audit, diff checks, and temporary-surface removal.
+- All staging payloads, diagnostic workflows, and write-capable preparation workflows were removed in the same gated publication commit.
 
 ## Human gate — W09
 
-The remaining acceptance evidence requires the user's authorized browser Cookie and live X traffic on the user's local machine. Run the commands and interruption/resume procedure in `W09_plan.md`, then generate the shareable summary with `scripts/live/collect_w09_evidence.py`. Do not send Cookie values, local account databases, raw authorization headers, raw response bodies, local output paths, or plaintext cursor values.
+The remaining evidence requires the user's authorized browser session and live X traffic on the user's local machine. Follow `W09_LIVE_RUNBOOK.md` and run:
+
+```powershell
+.\scripts\live\run_w09.ps1 `
+  -Home D:\x_scrap_private `
+  -SmallUsername <PUBLIC_USERNAME> `
+  -VolumeUsername <PUBLIC_USERNAME>
+```
+
+The command performs deterministic preflight, prompts for the Cookie only through the no-echo local path when necessary, runs small/interruption/resume/higher-volume cases, verifies the export bundles, and writes `W09_ACCEPTANCE.json` under the private state directory.
+
+Before sharing, manually inspect the acceptance file. Do not send Cookie values, account databases, authorization headers, raw responses, raw post text, local paths, or plaintext cursor values.
 
 ## Remaining after W09
 
+- validate the sanitized `W09_ACCEPTANCE.json` and write `W09_result.md`;
 - W10 final documentation and acceptance reconciliation;
-- mark PR #2 ready, merge after all checks pass;
+- mark PR #2 ready and merge after all checks pass;
 - run exact-main Post-Merge validation;
 - set final acceptance, security, and post-merge states to PASS and close Task #1.
 
