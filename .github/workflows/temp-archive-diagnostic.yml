@@ -1,0 +1,33 @@
+name: Temporary Archive Diagnostic
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/temp-archive-diagnostic.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Inspect staged update archive
+        shell: bash
+        env:
+          REPOSITORY: ${{ github.repository }}
+          TARGET_BRANCH: feature/x-user-timeline-v1
+        run: |
+          set -u
+          git clone --quiet --depth 1 --branch "${TARGET_BRANCH}" "https://github.com/${REPOSITORY}.git" repo
+          cd repo
+          wc -c .bootstrap/w07-w08-update.tar.gz.b64
+          base64 --decode .bootstrap/w07-w08-update.tar.gz.b64 > /tmp/update.tar.gz
+          rc=$?
+          echo "decode_rc=${rc}"
+          wc -c /tmp/update.tar.gz
+          sha256sum /tmp/update.tar.gz
+          exit 1
