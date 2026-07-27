@@ -24,6 +24,7 @@
 - W08 reset-aware 429 waits, automatic cursor resume for timelines and search, root-cause retry budgets, explicit recovery events, and non-recoverable error separation.
 - W09 deterministic preparation now includes a one-command Windows orchestrator, four live cases, an exact committed-cursor resume contract, strict sanitized evidence, and automatic `W09_ACCEPTANCE.json` generation.
 - The W09 preparation publication passed SHA-256 reconstruction, Python compilation, Ruff, the complete pytest suite, canonical task-state validation, repository secret audit, diff checks, and temporary-surface removal.
+- A subsequent clean repository state passed the permanent Test, Product Gate, State Consistency, and Secret Audit workflows.
 - All staging payloads, diagnostic workflows, and write-capable preparation workflows were removed in the same gated publication commit.
 
 ## Human gate — W09
