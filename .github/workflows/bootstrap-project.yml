@@ -35,15 +35,15 @@ jobs:
           base64 --decode /tmp/x_scrap_project.tar.gz.b64 > /tmp/x_scrap_project.tar.gz
           echo "842539f68d9187ae402a3c974ba13db7a66da09bbc38781e33e70e130dd61117  /tmp/x_scrap_project.tar.gz" | sha256sum --check --strict
           tar -xzf /tmp/x_scrap_project.tar.gz -C .
-      - name: Commit generated project tree
+      - name: Commit generated product tree
         shell: bash
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
+          git add -A -- . ':(exclude).github/workflows/**'
           if git diff --cached --quiet; then
-            echo "Project tree already present"
+            echo "Product tree already present"
             exit 0
           fi
           git commit -m "build: bootstrap resumable X collector"
