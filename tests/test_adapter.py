@@ -24,9 +24,11 @@ class FakeResponse:
 
 def _install_fake_twscrape(monkeypatch, api_class, parser=None):
     package = types.ModuleType("twscrape")
+    package.__path__ = []
     package.API = api_class
     models = types.ModuleType("twscrape.models")
     models.parse_tweets = parser or (lambda payload, limit: payload.get("tweets", []))
+    package.models = models
     monkeypatch.setitem(sys.modules, "twscrape", package)
     monkeypatch.setitem(sys.modules, "twscrape.models", models)
 
@@ -153,7 +155,7 @@ async def test_raw_page_adapter_preserves_cursors_payloads_and_items(monkeypatch
     assert [page.request_cursor for page in pages] == ["resume", "next-1"]
     assert [page.next_cursor for page in pages] == ["next-1", None]
     assert [page.items[0]["id"] for page in pages] == ["1", "2"]
-    assert pages[0].artifact_payload()["raw_payload"]["tweets"][0]["id"] == "1"
+    assert pages[0].artifact_payload()["tweets"][0]["id"] == "1"
 
 
 @pytest.mark.asyncio
