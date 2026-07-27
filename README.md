@@ -73,21 +73,32 @@ x-scrap user export `
   --max-posts-per-window 5000
 ```
 
-Resume is enabled by default. Re-running the same command reuses the latest unfinished job, its fixed cutoff, committed pages, next cursor, completed windows, and deduplicated posts. Use `--no-resume` only when a new independent snapshot is required.
+Resume is enabled by default. Re-running the same command reuses the latest unfinished job, its fixed cutoff, committed pages, next cursor, completed windows, and deduplicated posts. A 429 wait is persisted separately from transient 502/timeout retry counters, so a valid reset wait does not exhaust the infrastructure budget. If an export directory was already atomically published immediately before interruption, resume verifies and finalizes that bundle without another X request. Use `--no-resume` only when a new independent snapshot is required.
 
 ## Output
 
-Each task writes normalized exports:
+Each task is first written to a private staging directory, validated, and then atomically published as:
 
 ```text
 exports/<username>/<job_id>/
 ├── manifest.json
 ├── profile.json
+├── coverage.json
+├── windows.json
+├── scopes.json
 ├── tweets.jsonl
 ├── tweets.csv
-├── coverage.json
-└── summary.md
+├── pages.jsonl
+├── conflicts.jsonl
+├── events.jsonl
+├── errors.jsonl
+├── summary.md
+└── inventory.json
 ```
+
+`inventory.json` contains deterministic byte sizes, SHA-256 values, record counts, source counts, scope/window state summaries, and known source limitations. The bundle validator requires JSONL/CSV identity, string IDs, UTC timestamps, stable ordering, matching counts/statuses, and no untracked files before publication.
+
+A material same-ID difference in author, timestamp, text, conversation, reply, quote, or repost relations is preserved in `conflicts.jsonl`; the first canonical payload is not overwritten and coverage becomes `SOURCE_CONFLICT`. Volatile engagement counters do not create false conflicts.
 
 The corresponding page evidence is stored separately:
 
@@ -128,27 +139,13 @@ The Cookie is accepted only through a no-echo prompt; the CLI intentionally has 
 
 Credential-shaped values are centrally redacted before persisted errors, events, account-list output, and top-level CLI errors. GitHub Actions never receive a real Cookie or collected dataset. See [Security policy](docs/security/SECURITY.md) and [Threat model](docs/security/THREAT_MODEL.md).
 
-## Verified bundle and recovery guarantees
-
-Every completed or partial export is assembled in a private staging directory and published only after `inventory.json` verifies the required files, hashes, byte sizes, record counts, JSONL/CSV identity, string IDs, UTC timestamps, and stable ordering. Material disagreements for one post ID are preserved in `conflicts.jsonl` and produce `SOURCE_CONFLICT`; missing or inconsistent window/scope/page/raw evidence cannot be labeled complete.
-
-Rate limits and transient failures follow separate policies. A known 429 reset time is honored with a safety margin and the same scope resumes from its last committed cursor. Transient errors use bounded exponential retry and a same-root-cause limit. Schema changes and login challenges are not retried as empty data.
-
-The authenticated smoke runner is local-only and refuses CI:
+For the opt-in authenticated validation stage, use `docs/implementation/x-user-timeline-v1/W09_LIVE_RUNBOOK.md`; its tooling writes only sanitized evidence and is never invoked by CI. On Windows, the complete small/interruption/resume/higher-volume sequence is one command:
 
 ```powershell
-python scripts/live/run_user_export_smoke.py --home D:\x_scrap_data --preflight-only
-python scripts/live/run_user_export_smoke.py xdevelopers --home D:\x_scrap_data --acknowledge-live-x
+.\scripts\live\run_w09.ps1 `
+  -Home D:\x_scrap_private `
+  -SmallUsername <PUBLIC_USERNAME> `
+  -VolumeUsername <PUBLIC_USERNAME>
 ```
 
-## Local live acceptance evidence
-
-Authenticated live X testing is never performed in GitHub Actions. For the opt-in W09 acceptance run, follow [`W09_plan.md`](docs/implementation/x-user-timeline-v1/W09_plan.md). After a live job, generate a redacted evidence summary with:
-
-```powershell
-python scripts/live/collect_w09_evidence.py `
-  --home $env:X_SCRAP_HOME `
-  --job-id <job_id>
-```
-
-The summary omits Cookie values, authorization headers, raw response bodies, local paths, and plaintext cursor values; cursor resume continuity is represented by fingerprints only.
+The acceptance tool binds resume to a private interruption checkpoint, verifies that committed page hashes were preserved and the first new page used the persisted cursor, then writes `W09_ACCEPTANCE.json` under the private state directory.

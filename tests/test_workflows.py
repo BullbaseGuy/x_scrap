@@ -16,6 +16,9 @@ def test_workflows_use_current_official_actions_and_read_only_permissions():
         assert "persist-credentials: false" in source
 
 
-def test_live_smoke_script_is_not_invoked_by_ci():
+def test_live_authenticated_scripts_are_not_invoked_by_ci():
     for path in WORKFLOWS.glob("*.yml"):
-        assert "run_user_export_smoke.py" not in path.read_text(encoding="utf-8")
+        source = path.read_text(encoding="utf-8")
+        assert "scripts/live/" not in source
+        assert "run_user_export_smoke.py" not in source
+        assert "run_e2e_case.py" not in source
