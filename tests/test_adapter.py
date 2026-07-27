@@ -14,6 +14,23 @@ import x_scrap.adapters.twscrape_adapter as adapter_module
 from x_scrap.adapters.base import AuthRequired, RateLimited, TransientUpstreamError, UpstreamChanged
 
 
+class FakeResponse:
+    def __init__(self, payload):
+        self.payload = payload
+
+    def json(self):
+        return self.payload
+
+
+def _install_fake_twscrape(monkeypatch, api_class, parser=None):
+    package = types.ModuleType("twscrape")
+    package.API = api_class
+    models = types.ModuleType("twscrape.models")
+    models.parse_tweets = parser or (lambda payload, limit: payload.get("tweets", []))
+    monkeypatch.setitem(sys.modules, "twscrape", package)
+    monkeypatch.setitem(sys.modules, "twscrape.models", models)
+
+
 @pytest.mark.parametrize(
     "value",
     [
@@ -50,7 +67,7 @@ def test_missing_twscrape_dependency_has_actionable_error(monkeypatch, tmp_path)
     original_import = builtins.__import__
 
     def missing_import(name, globals=None, locals=None, fromlist=(), level=0):
-        if name == "twscrape":
+        if name == "twscrape" or name.startswith("twscrape."):
             raise ImportError("synthetic missing dependency")
         return original_import(name, globals, locals, fromlist, level)
 
@@ -86,9 +103,7 @@ async def test_adapter_forces_telemetry_off_and_redacts_account_errors(monkeypat
             assert os.environ["DO_NOT_TRACK"] == "1"
             self.pool = FakePool()
 
-    fake_module = types.ModuleType("twscrape")
-    fake_module.API = FakeAPI
-    monkeypatch.setitem(sys.modules, "twscrape", fake_module)
+    _install_fake_twscrape(monkeypatch, FakeAPI)
     monkeypatch.setenv("TWS_TELEMETRY", "1")
     monkeypatch.delenv("DO_NOT_TRACK", raising=False)
 
@@ -106,6 +121,61 @@ async def test_adapter_forces_telemetry_off_and_redacts_account_errors(monkeypat
         }
     ]
     assert set(accounts[0]) == {"username", "active", "last_used", "error_msg"}
+
+
+@pytest.mark.asyncio
+async def test_raw_page_adapter_preserves_cursors_payloads_and_items(monkeypatch, tmp_path):
+    class FakeAPI:
+        def __init__(self, accounts_db: str, *, proxy: str | None = None):
+            self.pool = SimpleNamespace()
+
+        async def user_tweets_raw(self, user_id: int, *, limit: int, kv):
+            assert user_id == 7
+            assert limit == -1
+            assert kv == {"cursor": "resume"}
+            yield FakeResponse(
+                {
+                    "tweets": [{"id": "1"}],
+                    "instructions": [{"cursorType": "Bottom", "value": "next-1"}],
+                }
+            )
+            yield FakeResponse({"tweets": [{"id": "2"}], "instructions": []})
+
+    _install_fake_twscrape(monkeypatch, FakeAPI)
+    adapter = adapter_module.TwscrapeAdapter(tmp_path / "accounts.db")
+
+    pages = [
+        page
+        async for page in adapter.iter_user_tweet_pages("7", cursor="resume", limit=-1)
+    ]
+
+    assert [page.page_index for page in pages] == [0, 1]
+    assert [page.request_cursor for page in pages] == ["resume", "next-1"]
+    assert [page.next_cursor for page in pages] == ["next-1", None]
+    assert [page.items[0]["id"] for page in pages] == ["1", "2"]
+    assert pages[0].artifact_payload()["raw_payload"]["tweets"][0]["id"] == "1"
+
+
+@pytest.mark.asyncio
+async def test_raw_page_adapter_rejects_repeated_cursor(monkeypatch, tmp_path):
+    class FakeAPI:
+        def __init__(self, accounts_db: str, *, proxy: str | None = None):
+            self.pool = SimpleNamespace()
+
+        async def search_raw(self, query: str, *, limit: int, kv):
+            yield FakeResponse(
+                {
+                    "tweets": [{"id": "1"}],
+                    "instructions": [{"cursorType": "Bottom", "value": "resume"}],
+                }
+            )
+
+    _install_fake_twscrape(monkeypatch, FakeAPI)
+    adapter = adapter_module.TwscrapeAdapter(tmp_path / "accounts.db")
+
+    with pytest.raises(UpstreamChanged, match="repeated pagination cursor"):
+        async for _ in adapter.iter_search_pages("from:alice", cursor="resume"):
+            pass
 
 
 def test_upstream_errors_are_classified_and_redacted_conservatively():
