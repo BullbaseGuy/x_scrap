@@ -518,3 +518,228 @@ async def test_resume_rejects_changed_fixed_start_and_cutoff(tmp_path):
         await service.export_user("alice", start=start + timedelta(hours=1))
     with pytest.raises(ValueError, match="change cutoff"):
         await service.export_user("alice", cutoff=cutoff + timedelta(hours=1))
+
+
+@pytest.mark.asyncio
+async def test_historical_search_uses_resolved_username_and_stable_user_id(tmp_path):
+    start = datetime(2024, 1, 1, tzinfo=UTC)
+    cutoff = start + timedelta(days=1)
+    canonical_user = user(username="AliceCanonical", user_id=77, statuses_count=0)
+    valid = post(1, start + timedelta(hours=1), username="AliceCanonical", user_id=77)
+    reused_username = post(2, start + timedelta(hours=2), username="AliceCanonical", user_id=88)
+    adapter = FakeAdapter(
+        searches={"from:AliceCanonical": [valid, reused_username]},
+        resolved_user=canonical_user,
+    )
+    db = Database(tmp_path / "jobs.db")
+    service = UserExportService(
+        adapter,
+        db,
+        exports_root=tmp_path / "exports",
+        raw_root=tmp_path / "raw",
+        heartbeat_interval=999,
+    )
+
+    result = await service.export_user("old_handle", start=start, cutoff=cutoff)
+
+    assert adapter.queries
+    assert all("from:AliceCanonical" in query for query in adapter.queries)
+    assert result["username"] == "AliceCanonical"
+    assert result["requested_username"] == "old_handle"
+    assert {row["post_id"] for row in db.iter_posts(result["job_id"])} == {"1"}
+
+
+@pytest.mark.asyncio
+async def test_historical_search_enforces_half_open_window_at_ingestion(tmp_path):
+    start = datetime(2024, 1, 1, tzinfo=UTC)
+    cutoff = start + timedelta(hours=2)
+    at_start = post(1, start)
+    inside = post(2, start + timedelta(hours=1))
+    at_cutoff = post(3, cutoff)
+    before = post(4, start - timedelta(seconds=1))
+    foreign = post(5, start + timedelta(minutes=30), username="bob", user_id=8)
+    adapter = FakeAdapter(
+        searches={"from:alice": [before, at_start, foreign, inside, at_cutoff]},
+        resolved_user=user(statuses_count=0),
+        filter_search_by_query=False,
+    )
+    db = Database(tmp_path / "jobs.db")
+    service = UserExportService(
+        adapter,
+        db,
+        exports_root=tmp_path / "exports",
+        raw_root=tmp_path / "raw",
+        heartbeat_interval=999,
+    )
+
+    result = await service.export_user("alice", start=start, cutoff=cutoff)
+
+    assert {row["post_id"] for row in db.iter_posts(result["job_id"])} == {"1", "2"}
+    windows = [row for row in db.all_windows(result["job_id"]) if row["status"] != "SPLIT"]
+    assert len(windows) == 1
+    assert windows[0]["oldest_post_at"] == "2024-01-01T00:00:00Z"
+    assert windows[0]["newest_post_at"] == "2024-01-01T01:00:00Z"
+
+
+@pytest.mark.asyncio
+async def test_dense_historical_window_splits_into_complete_contiguous_children(tmp_path):
+    start = datetime(2024, 1, 1, tzinfo=UTC)
+    cutoff = start + timedelta(hours=4)
+    values = [
+        post(1, start + timedelta(minutes=30)),
+        post(2, start + timedelta(minutes=60)),
+        post(3, start + timedelta(minutes=90)),
+        post(4, start + timedelta(minutes=150)),
+        post(5, start + timedelta(minutes=180)),
+        post(6, start + timedelta(minutes=210)),
+    ]
+    adapter = FakeAdapter(
+        searches={"from:alice": values},
+        page_size=2,
+        resolved_user=user(statuses_count=0),
+    )
+    db = Database(tmp_path / "jobs.db")
+    service = UserExportService(
+        adapter,
+        db,
+        exports_root=tmp_path / "exports",
+        raw_root=tmp_path / "raw",
+        heartbeat_interval=999,
+    )
+
+    result = await service.export_user(
+        "alice",
+        start=start,
+        cutoff=cutoff,
+        min_window_seconds=3600,
+        max_posts_per_window=3,
+    )
+
+    assert result["coverage_status"] == "COMPLETE_PUBLICLY_RETRIEVABLE"
+    assert result["post_count"] == 6
+    windows = db.all_windows(result["job_id"])
+    parents = [row for row in windows if row["status"] == "SPLIT"]
+    leaves = sorted(
+        (row for row in windows if row["status"] == "COMPLETE"),
+        key=lambda row: row["start_at"],
+    )
+    assert len(parents) == 1
+    assert len(leaves) == 2
+    assert leaves[0]["start_at"] == "2024-01-01T00:00:00Z"
+    assert leaves[0]["end_at"] == leaves[1]["start_at"]
+    assert leaves[1]["end_at"] == "2024-01-01T04:00:00Z"
+    assert all(row["terminal_reason"] == "SOURCE_EXHAUSTED" for row in leaves)
+
+    parent_scope = f"window:{parents[0]['window_id']}"
+    assert service.pages.get_scope(result["job_id"], parent_scope)["state"] == "LIMIT_REACHED"
+    assert service.pages.count_pages(result["job_id"]) >= 5
+
+
+@pytest.mark.asyncio
+async def test_export_rejects_fractional_second_contract_boundaries(tmp_path):
+    db = Database(tmp_path / "jobs.db")
+    service = UserExportService(
+        FakeAdapter(resolved_user=user(statuses_count=0)),
+        db,
+        exports_root=tmp_path / "exports",
+        raw_root=tmp_path / "raw",
+        heartbeat_interval=999,
+    )
+    start = datetime(2024, 1, 1, microsecond=1, tzinfo=UTC)
+    cutoff = datetime(2024, 1, 2, tzinfo=UTC)
+
+    with pytest.raises(ValueError, match="start must use whole-second"):
+        await service.export_user("alice", start=start, cutoff=cutoff)
+    with pytest.raises(ValueError, match="cutoff must use whole-second"):
+        await service.export_user(
+            "alice",
+            start=cutoff - timedelta(days=1),
+            cutoff=cutoff.replace(microsecond=1),
+            resume=False,
+        )
+
+
+@pytest.mark.asyncio
+async def test_split_child_scope_resumes_from_its_own_committed_cursor(tmp_path):
+    start = datetime(2024, 1, 1, tzinfo=UTC)
+    cutoff = start + timedelta(hours=4)
+    left_values = [
+        post(1, start + timedelta(minutes=30)),
+        post(2, start + timedelta(minutes=90)),
+    ]
+    right_values = [
+        post(3, start + timedelta(minutes=150)),
+        post(4, start + timedelta(minutes=210)),
+    ]
+    adapter = FakeAdapter(
+        searches={"from:alice": [*left_values, *right_values]},
+        page_size=1,
+        resolved_user=user(statuses_count=0),
+    )
+    db = Database(tmp_path / "jobs.db")
+    service = UserExportService(
+        adapter,
+        db,
+        exports_root=tmp_path / "exports",
+        raw_root=tmp_path / "raw",
+        heartbeat_interval=999,
+    )
+    job_id = db.create_job(
+        username="alice",
+        cutoff_at=cutoff,
+        scope="authored",
+        output_dir=tmp_path / "exports" / "alice" / "child-resume",
+        start_at=start,
+    )
+    db.save_user_snapshot(job_id, UserSnapshot.from_object(user(statuses_count=0)).to_dict())
+
+    parent = TimeWindow(start, cutoff)
+    left, right = (
+        TimeWindow(start, start + timedelta(hours=2), 1),
+        TimeWindow(start + timedelta(hours=2), cutoff, 1),
+    )
+    db.add_windows(job_id, "search", [parent])
+    parent_id = db.all_windows(job_id)[0]["window_id"]
+    db.update_window(parent_id, status="SPLIT", terminal_reason="SEEDED_SPLIT")
+    db.add_windows(job_id, "search", [left, right])
+
+    right_row = next(
+        row
+        for row in db.all_windows(job_id)
+        if row["status"] == "PENDING" and row["start_at"] == "2024-01-01T02:00:00Z"
+    )
+    right_scope = f"window:{right_row['window_id']}"
+    service.pages.ensure_scope(job_id, right_scope, "search")
+    first_right = right_values[0]
+    page = CollectorPage(
+        source="search",
+        operation="SearchTimeline",
+        request_cursor=None,
+        next_cursor="offset:1",
+        items=(first_right,),
+        raw_payload={"tweets": [first_right], "next_cursor": "offset:1"},
+        page_index=0,
+    )
+    artifact = service.raw_store.write_content_addressed_json(
+        Path(job_id) / "pages" / "seed-child",
+        page.artifact_payload(),
+        prefix="page-000000",
+    )
+    service.pages.commit_page(
+        job_id,
+        right_scope,
+        page,
+        artifact,
+        [PostRecord.from_object(first_right, source="search")],
+    )
+
+    result = await service.export_user("alice", resume=True, max_posts_per_window=10)
+
+    search_requests = [request for request in adapter.page_requests if request[0] == "search"]
+    assert search_requests == [
+        ("search", None, 10),
+        ("search", "offset:1", 9),
+    ]
+    assert result["coverage_status"] == "COMPLETE_PUBLICLY_RETRIEVABLE"
+    assert {row["post_id"] for row in db.iter_posts(job_id)} == {"1", "2", "3", "4"}
+    assert service.pages.get_scope(job_id, right_scope)["state"] == "COMPLETE"

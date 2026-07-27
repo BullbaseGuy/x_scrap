@@ -244,6 +244,10 @@ class TimeWindow:
     def __post_init__(self) -> None:
         start = ensure_utc(self.start)
         end = ensure_utc(self.end)
+        if start.microsecond or end.microsecond:
+            raise ValueError("window boundaries must use whole-second precision")
+        if self.depth < 0:
+            raise ValueError("window depth cannot be negative")
         object.__setattr__(self, "start", start)
         object.__setattr__(self, "end", end)
         if start >= end:

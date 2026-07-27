@@ -42,6 +42,13 @@ EARLIEST_X = datetime(2006, 3, 21, tzinfo=UTC)
 _SAFE_SCOPE_RE = re.compile(r"[^A-Za-z0-9._-]+")
 
 
+def _require_whole_second(value: datetime, name: str) -> datetime:
+    normalized = ensure_utc(value)
+    if normalized.microsecond:
+        raise ValueError(f"{name} must use whole-second precision")
+    return normalized
+
+
 class UserExportService:
     def __init__(
         self,
@@ -78,14 +85,20 @@ class UserExportService:
     ) -> dict[str, Any]:
         if max_posts_per_window < 1:
             raise ValueError("max_posts_per_window must be positive")
+        if initial_window_days < 1:
+            raise ValueError("initial_window_days must be positive")
+        if min_window_seconds < 1:
+            raise ValueError("min_window_seconds must be positive")
         if timeline_limit == 0 or timeline_limit < -1:
             raise ValueError("timeline_limit must be -1 or positive")
 
         username = username.strip().lstrip("@").casefold()
         if not username:
             raise ValueError("username must not be empty")
-        requested_start = ensure_utc(start) if start is not None else None
-        requested_cutoff = ensure_utc(cutoff) if cutoff is not None else None
+        requested_start = _require_whole_second(start, "start") if start is not None else None
+        requested_cutoff = (
+            _require_whole_second(cutoff, "cutoff") if cutoff is not None else None
+        )
         requested_scope = "authored+retweets" if include_retweets else "authored"
 
         resumable = self.db.find_resumable_job(username) if resume else None
@@ -106,7 +119,7 @@ class UserExportService:
             cutoff = stored_cutoff
         else:
             start = requested_start
-            cutoff = requested_cutoff or utc_now()
+            cutoff = requested_cutoff or utc_now().replace(microsecond=0)
             provisional = self.exports_root / username / "pending"
             job_id = self.db.create_job(
                 username=username,
@@ -157,7 +170,12 @@ class UserExportService:
                         f"@{user.username} is protected; public export is unavailable"
                     )
 
-                start = max(start or user.created_at or EARLIEST_X, EARLIEST_X)
+                if start is None:
+                    start = ensure_utc(user.created_at or EARLIEST_X).replace(microsecond=0)
+                else:
+                    start = _require_whole_second(start, "start")
+                cutoff = _require_whole_second(cutoff, "cutoff")
+                start = max(start, EARLIEST_X)
                 if start >= cutoff:
                     raise ValueError("start must precede the fixed cutoff")
                 self.db.update_job(job_id, user_id=user.user_id, start_at=iso_utc(start))
@@ -180,7 +198,8 @@ class UserExportService:
 
                 await self._collect_search_windows(
                     job_id,
-                    username,
+                    user.username,
+                    user.user_id,
                     include_retweets=include_retweets,
                     min_window_seconds=min_window_seconds,
                     max_posts_per_window=max_posts_per_window,
@@ -212,7 +231,8 @@ class UserExportService:
                 manifest = {
                     "schema_version": "1.1.0",
                     "job_id": job_id,
-                    "username": username,
+                    "username": user.username,
+                    "requested_username": username,
                     "user_id": user.user_id,
                     "start_at": iso_utc(start),
                     "cutoff_at": iso_utc(cutoff),
@@ -359,6 +379,7 @@ class UserExportService:
         self,
         job_id: str,
         username: str,
+        user_id: str,
         *,
         include_retweets: bool,
         min_window_seconds: int,
@@ -386,6 +407,7 @@ class UserExportService:
                     query,
                     include_retweets,
                     max_posts_per_window,
+                    expected_user_id=user_id,
                 )
             except (RateLimited, TransientUpstreamError) as exc:
                 if attempts > self.retry_policy.infrastructure_retry_limit:
@@ -446,6 +468,8 @@ class UserExportService:
         query: str,
         include_retweets: bool,
         limit: int,
+        *,
+        expected_user_id: str,
     ) -> dict[str, Any]:
         scope_key = f"window:{window_id}"
         scope = self.pages.ensure_scope(job_id, scope_key, "search")
@@ -475,6 +499,7 @@ class UserExportService:
                 "search",
                 stream,
                 include_retweets=include_retweets,
+                expected_user_id=expected_user_id,
                 window=window,
             )
             exhausted = self._finish_scope_after_stream(

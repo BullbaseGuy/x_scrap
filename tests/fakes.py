@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import Any
@@ -69,6 +70,7 @@ class FakeAdapter:
         page_size: int = 100,
         resolved_user: Any = _UNSET,
         resolve_error: Exception | None = None,
+        filter_search_by_query: bool = True,
     ):
         self.timeline = timeline or []
         self.replies = replies or []
@@ -76,6 +78,7 @@ class FakeAdapter:
         self.page_size = page_size
         self.resolved_user = resolved_user
         self.resolve_error = resolve_error
+        self.filter_search_by_query = filter_search_by_query
         self.queries: list[str] = []
         self.page_requests: list[tuple[str, str | None, int]] = []
 
@@ -117,6 +120,8 @@ class FakeAdapter:
             if key in query:
                 values = list(matches)
                 break
+        if self.filter_search_by_query:
+            values = self._filter_search_times(values, query)
         return self._pages(
             values,
             source="search",
@@ -176,6 +181,21 @@ class FakeAdapter:
             request_cursor = next_cursor
             offset = next_offset
             local_index += 1
+
+    @staticmethod
+    def _filter_search_times(values: list[Any], query: str) -> list[Any]:
+        since_match = re.search(r"(?:^|\s)since_time:(\d+)(?:\s|$)", query)
+        until_match = re.search(r"(?:^|\s)until_time:(\d+)(?:\s|$)", query)
+        if since_match is None or until_match is None:
+            return values
+        since = int(since_match.group(1))
+        until = int(until_match.group(1))
+        filtered: list[Any] = []
+        for value in values:
+            created = value.get("date") if isinstance(value, dict) else getattr(value, "date", None)
+            if isinstance(created, datetime) and since <= int(created.timestamp()) < until:
+                filtered.append(value)
+        return filtered
 
     @staticmethod
     def _cursor_offset(cursor: str | None) -> int:

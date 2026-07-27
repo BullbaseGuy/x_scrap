@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "state_revision": 7,
+  "state_revision": 8,
   "task_id": "x-user-timeline-v1",
   "title": "Public X user timeline export with resumable historical coverage",
   "status": "RUNNING",
@@ -14,8 +14,8 @@
   "security_status": "PENDING",
   "working_branch": "feature/x-user-timeline-v1",
   "pull_request": 2,
-  "current_stage": "W06",
-  "last_completed_stage": "W05",
+  "current_stage": "W07",
+  "last_completed_stage": "W06",
   "post_merge": {
     "status": "PENDING",
     "commit_sha": null
@@ -32,16 +32,16 @@
     "interruption_sent": false
   },
   "base_sha_at_start": "340bf6774ae1d2942b581b2ed2eaf660c9ff84eb",
-  "last_product_commit_sha": "678eeafa104404d89a4bf5da71fec7ab16510a5e",
-  "last_successful_step": "W05 recent timeline implementation passed the atomic deterministic apply gate",
-  "next_action": "Implement W06 stable-ID historical search, exact whole-second windows, dense-window splitting, and child resume",
-  "updated_at_utc": "2026-07-27T13:27:53Z",
+  "last_product_commit_sha": "PENDING_W06_APPLY_COMMIT",
+  "last_successful_step": "W06 stable-ID historical search and exact recursive windows passed local deterministic validation",
+  "next_action": "Implement W07 cross-layer coverage consistency, conflict detection, and atomic self-verifying exports",
+  "updated_at_utc": "2026-07-27T13:35:32Z",
   "gate_results": {
-    "compile": "PASS_W05_APPLY_WORKFLOW",
-    "pytest": "PASS_60_W05_APPLY_WORKFLOW",
-    "ruff": "PASS_W05_APPLY_WORKFLOW",
-    "state": "PASS_W05_APPLY_WORKFLOW",
-    "secret_audit": "PASS_W05_APPLY_WORKFLOW"
+    "compile": "PASS_W06_APPLY_WORKFLOW",
+    "pytest": "PASS_69_W06_APPLY_WORKFLOW",
+    "ruff": "PASS_W06_APPLY_WORKFLOW",
+    "state": "PASS_W06_APPLY_WORKFLOW",
+    "secret_audit": "PASS_W06_APPLY_WORKFLOW"
   },
   "retry_budget": {
     "infrastructure_limit": 3,
