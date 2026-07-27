@@ -4,6 +4,8 @@ from collections.abc import AsyncIterator
 from datetime import datetime
 from typing import Any, Protocol
 
+from x_scrap.domain.pages import CollectorPage
+
 
 class AdapterError(RuntimeError):
     """Base class for upstream adapter failures."""
@@ -30,10 +32,14 @@ class TransientUpstreamError(AdapterError):
 class CollectorAdapter(Protocol):
     async def resolve_user(self, username: str) -> Any: ...
 
-    def iter_user_tweets(self, user_id: str, *, limit: int = -1) -> AsyncIterator[Any]: ...
+    def iter_user_tweet_pages(
+        self, user_id: str, *, cursor: str | None = None, limit: int = -1
+    ) -> AsyncIterator[CollectorPage]: ...
 
-    def iter_user_tweets_and_replies(
-        self, user_id: str, *, limit: int = -1
-    ) -> AsyncIterator[Any]: ...
+    def iter_user_tweet_and_reply_pages(
+        self, user_id: str, *, cursor: str | None = None, limit: int = -1
+    ) -> AsyncIterator[CollectorPage]: ...
 
-    def iter_search(self, query: str, *, limit: int = -1) -> AsyncIterator[Any]: ...
+    def iter_search_pages(
+        self, query: str, *, cursor: str | None = None, limit: int = -1
+    ) -> AsyncIterator[CollectorPage]: ...
