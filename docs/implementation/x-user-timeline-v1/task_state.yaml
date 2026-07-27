@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "state_revision": 3,
+  "state_revision": 4,
   "task_id": "x-user-timeline-v1",
   "title": "Public X user timeline export with resumable historical coverage",
   "status": "RUNNING",
@@ -13,7 +13,7 @@
   },
   "security_status": "PENDING",
   "working_branch": "feature/x-user-timeline-v1",
-  "pull_request": null,
+  "pull_request": 2,
   "current_stage": "W02",
   "last_completed_stage": "W01",
   "post_merge": {
@@ -32,21 +32,21 @@
     "interruption_sent": false
   },
   "base_sha_at_start": "340bf6774ae1d2942b581b2ed2eaf660c9ff84eb",
-  "last_product_commit_sha": "",
-  "last_successful_step": "W01 local deterministic bootstrap validation",
-  "next_action": "Publish bootstrap, open Draft PR, and complete W02 adapter contract evidence",
-  "updated_at_utc": "2026-07-27T10:58:41Z",
+  "last_product_commit_sha": "d5eeab488afc2c0197c493ba50f1763dcd793148",
+  "last_successful_step": "W01 published to Draft PR #2 with one-time bootstrap surface removed",
+  "next_action": "Complete W02 adapter contract evidence and resolve all pull-request CI findings",
+  "updated_at_utc": "2026-07-27T11:21:58Z",
   "gate_results": {
     "compile": "PASS",
-    "pytest": "PASS_11",
+    "pytest": "PASS_17_LOCAL",
     "ruff": "PENDING_CI",
-    "state": "PENDING",
-    "secret_audit": "PENDING"
+    "state": "PENDING_CI",
+    "secret_audit": "PENDING_CI"
   },
   "retry_budget": {
     "infrastructure_limit": 3,
     "same_root_cause_limit": 2,
-    "used": 0
+    "used": 1
   },
   "metrics": {
     "codex_calls": 0,
