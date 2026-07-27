@@ -50,6 +50,23 @@ jobs:
               ')\n',
           )
           path.write_text(text, encoding='utf-8')
+
+          path = Path('tests/test_w09_evidence.py')
+          text = path.read_text(encoding='utf-8')
+          text = text.replace('import json\n', 'import json\nimport runpy\n')
+          text = text.replace(
+              'from scripts.live.collect_w09_evidence import build_evidence\n',
+              '',
+          )
+          anchor = 'from x_scrap.storage.raw_store import RawStore\n\n'
+          replacement = (
+              anchor
+              + 'build_evidence = runpy.run_path(\n'
+              + '    str(Path(__file__).parents[1] / "scripts" / "live" / "collect_w09_evidence.py")\n'
+              + ')["build_evidence"]\n\n'
+          )
+          text = text.replace(anchor, replacement)
+          path.write_text(text, encoding='utf-8')
           PY
           rm -f \
             .github/workflows/temp-apply-w09-evidence.yml \
