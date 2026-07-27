@@ -6,14 +6,16 @@ Use `twscrape==0.19.2` behind `TwscrapeAdapter` for the first product slice. Kee
 
 ## Evidence reviewed
 
+The runtime version is exactly pinned in `pyproject.toml`. The source review on 2026-07-27 also inspected upstream `main` at commit `e51d9ad043c8bb15284ca86178740004fa0fc9de` to identify current compatibility behavior without silently changing the runtime pin.
+
 At the reviewed upstream revision, `twscrape`:
 
 - is MIT licensed and supports Python 3.12;
-- exposes asynchronous user lookup, user timeline, user timeline-with-replies, and search methods;
+- exposes asynchronous `user_by_login`, `user_tweets`, `user_tweets_and_replies`, and `search` methods;
+- exposes page-level `user_tweets_raw`, `user_tweets_and_replies_raw`, and `search_raw` methods;
 - supports browser-cookie account setup with `auth_token` and `ct0`;
-- stores account sessions in SQLite;
-- exposes parsed models and raw-response variants;
-- waits or rotates when an operation-specific account is rate limited;
+- stores account sessions and operation locks in SQLite;
+- waits for or rotates operation-specific accounts when they are temporarily locked;
 - can disable telemetry with `TWS_TELEMETRY=0` or `DO_NOT_TRACK=1`.
 
 ## Why not copy the implementation
@@ -22,10 +24,23 @@ X's private operation IDs, feature flags, transaction headers, and response shap
 
 - the stable adapter contract;
 - resumable orchestration;
-- time partitioning;
+- time partitioning and page checkpoints;
 - persistence and deduplication;
 - completeness auditing;
 - exports and security policy.
+
+## Adapter safeguards
+
+`TwscrapeAdapter` now:
+
+- imports `twscrape` lazily inside adapter construction;
+- forces both supported telemetry opt-out variables before the upstream import;
+- requires exact, non-empty `auth_token` and `ct0` cookie fields;
+- rejects multiline labels and cookie headers;
+- never includes cookie fields in account-list output;
+- redacts cookie values from upstream account and exception text;
+- maps rate limit, authentication/challenge, transient, and schema/operation failures to stable project exceptions;
+- preserves a usable upstream rate-limit reset timestamp when one is available.
 
 ## Pinned version and upgrade policy
 
@@ -39,6 +54,6 @@ The initial pin is exact so a passing task is reproducible. An upgrade requires:
 
 An upstream operation or schema failure must not be interpreted as an empty timeline.
 
-## Known gap at this stage
+## Known gap after W02
 
-The implemented collector stores the normalized source payload for every accepted post. Full page-level HTTP response preservation through the upstream `_raw` methods remains a tracked hardening task. Until that is complete, repository documentation must call these files "normalized model artifacts," not raw HTTP responses.
+The collector currently stores the normalized source payload for every accepted post. Full page-level HTTP response preservation and next-cursor checkpoints through the upstream `_raw` methods are assigned to W03. Until that is complete, repository documentation must call existing files "normalized model artifacts," not raw HTTP responses.
