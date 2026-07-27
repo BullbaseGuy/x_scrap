@@ -1,4 +1,4 @@
-name: Temporary W03 Ruff Diagnostic
+name: Temporary W03 Test Diagnostic
 
 on:
   pull_request:
@@ -9,11 +9,11 @@ permissions:
   contents: read
 
 jobs:
-  ruff-diagnostic:
+  pytest-diagnostic:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
-      - name: Print concise Ruff findings
+      - name: Print concise pytest failures
         shell: bash
         env:
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
@@ -22,5 +22,5 @@ jobs:
           set -euo pipefail
           git clone --quiet --depth 1 --branch "${HEAD_REF}" "https://github.com/${REPOSITORY}.git" repo
           cd repo
-          python -m pip install --quiet 'ruff>=0.8'
-          ruff check --output-format=concise src tests scripts
+          python -m pip install --quiet -e '.[dev]'
+          pytest -q --tb=short
