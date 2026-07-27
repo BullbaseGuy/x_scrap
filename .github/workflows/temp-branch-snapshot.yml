@@ -26,10 +26,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          tar --exclude=.git --exclude=.venv -czf branch-snapshot.tar.gz .
+          tar --exclude=.git --exclude=.venv -czf /tmp/branch-snapshot.tar.gz .
       - uses: actions/upload-artifact@v4
         with:
           name: x-scrap-branch-snapshot
-          path: branch-snapshot.tar.gz
+          path: /tmp/branch-snapshot.tar.gz
           retention-days: 1
           if-no-files-found: error
