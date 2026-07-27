@@ -1,0 +1,35 @@
+name: Temporary W06 Branch Snapshot
+
+on:
+  push:
+    branches:
+      - feature/x-user-timeline-v1
+    paths:
+      - '.github/workflows/temp-w06-snapshot.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Package current branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar --exclude=.git --exclude=.venv -czf /tmp/w06-branch-snapshot.tar.gz .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: x-scrap-w06-branch-snapshot
+          path: /tmp/w06-branch-snapshot.tar.gz
+          retention-days: 1
+          if-no-files-found: error
