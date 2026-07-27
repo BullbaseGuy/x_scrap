@@ -125,18 +125,26 @@ class UserSnapshot:
         username = str(data.get("username") or data.get("screen_name") or "").lstrip("@")
         if not user_id or not username:
             raise ValueError("upstream user object is missing id or username")
+        raw_value = data.get("raw")
+        raw = jsonable(raw_value) if isinstance(raw_value, Mapping) else jsonable(data)
         return cls(
             user_id=user_id,
             username=username,
-            display_name=str(data.get("displayname") or data.get("name") or ""),
-            created_at=parse_datetime(data.get("created") or data.get("created_at")),
+            display_name=str(
+                data.get("display_name") or data.get("displayname") or data.get("name") or ""
+            ),
+            created_at=parse_datetime(data.get("created_at") or data.get("created")),
             protected=data.get("protected"),
-            followers_count=_safe_int(data.get("followersCount", data.get("followers_count"))),
-            statuses_count=_safe_int(data.get("statusesCount", data.get("statuses_count"))),
-            profile_url=data.get("url") or f"https://x.com/{username}",
-            description=data.get("rawDescription") or data.get("description"),
-            captured_at=utc_now(),
-            raw=jsonable(data),
+            followers_count=_safe_int(
+                data.get("followers_count", data.get("followersCount"))
+            ),
+            statuses_count=_safe_int(
+                data.get("statuses_count", data.get("statusesCount"))
+            ),
+            profile_url=data.get("profile_url") or data.get("url") or f"https://x.com/{username}",
+            description=data.get("description") or data.get("rawDescription"),
+            captured_at=parse_datetime(data.get("captured_at")) or utc_now(),
+            raw=raw,
         )
 
     def to_dict(self) -> dict[str, Any]:

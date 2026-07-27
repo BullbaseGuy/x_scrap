@@ -7,9 +7,17 @@ from typing import Any
 from x_scrap.domain.pages import CollectorPage
 
 UTC = UTC
+_UNSET = object()
 
 
-def user(username: str = "alice", user_id: int = 7, created: datetime | None = None) -> dict[str, Any]:
+def user(
+    username: str = "alice",
+    user_id: int = 7,
+    created: datetime | None = None,
+    *,
+    protected: bool = False,
+    statuses_count: int = 3,
+) -> dict[str, Any]:
     return {
         "id": user_id,
         "id_str": str(user_id),
@@ -17,19 +25,26 @@ def user(username: str = "alice", user_id: int = 7, created: datetime | None = N
         "displayname": username.title(),
         "created": created or datetime(2024, 1, 1, tzinfo=UTC),
         "followersCount": 10,
-        "statusesCount": 3,
+        "statusesCount": statuses_count,
         "url": f"https://x.com/{username}",
-        "protected": False,
+        "protected": protected,
     }
 
 
-def post(post_id: int, created: datetime, username: str = "alice", **extra: Any) -> dict[str, Any]:
+def post(
+    post_id: int,
+    created: datetime,
+    username: str = "alice",
+    *,
+    user_id: int = 7,
+    **extra: Any,
+) -> dict[str, Any]:
     value = {
         "id": post_id,
         "id_str": str(post_id),
         "url": f"https://x.com/{username}/status/{post_id}",
         "date": created,
-        "user": user(username=username),
+        "user": user(username=username, user_id=user_id),
         "lang": "en",
         "rawContent": f"post {post_id}",
         "conversationId": post_id,
@@ -45,16 +60,31 @@ def post(post_id: int, created: datetime, username: str = "alice", **extra: Any)
 
 
 class FakeAdapter:
-    def __init__(self, timeline=None, replies=None, searches=None, *, page_size: int = 100):
+    def __init__(
+        self,
+        timeline=None,
+        replies=None,
+        searches=None,
+        *,
+        page_size: int = 100,
+        resolved_user: Any = _UNSET,
+        resolve_error: Exception | None = None,
+    ):
         self.timeline = timeline or []
         self.replies = replies or []
         self.searches = searches or {}
         self.page_size = page_size
+        self.resolved_user = resolved_user
+        self.resolve_error = resolve_error
         self.queries: list[str] = []
         self.page_requests: list[tuple[str, str | None, int]] = []
 
     async def resolve_user(self, username: str):
-        return user(username)
+        if self.resolve_error is not None:
+            raise self.resolve_error
+        if self.resolved_user is _UNSET:
+            return user(username)
+        return self.resolved_user
 
     def iter_user_tweet_pages(
         self, user_id: str, *, cursor: str | None = None, limit: int = -1

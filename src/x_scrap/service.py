@@ -12,6 +12,7 @@ from x_scrap.adapters.base import (
     AuthRequired,
     CollectorAdapter,
     RateLimited,
+    TargetUnavailable,
     TransientUpstreamError,
     UpstreamChanged,
 )
@@ -23,6 +24,7 @@ from x_scrap.domain.models import (
     TimeWindow,
     UserSnapshot,
     WindowStatus,
+    ensure_utc,
     iso_utc,
     parse_datetime,
     utc_now,
@@ -79,21 +81,37 @@ class UserExportService:
         if timeline_limit == 0 or timeline_limit < -1:
             raise ValueError("timeline_limit must be -1 or positive")
 
-        username = username.lstrip("@")
-        cutoff = cutoff or utc_now()
+        username = username.strip().lstrip("@").casefold()
+        if not username:
+            raise ValueError("username must not be empty")
+        requested_start = ensure_utc(start) if start is not None else None
+        requested_cutoff = ensure_utc(cutoff) if cutoff is not None else None
+        requested_scope = "authored+retweets" if include_retweets else "authored"
+
         resumable = self.db.find_resumable_job(username) if resume else None
         if resumable:
             job_id = resumable["job_id"]
             output_dir = Path(resumable["output_dir"])
-            cutoff = parse_datetime(resumable["cutoff_at"]) or cutoff
-            if start is None:
-                start = parse_datetime(resumable["start_at"])
+            stored_cutoff = parse_datetime(resumable["cutoff_at"])
+            if stored_cutoff is None:
+                raise ValueError(f"resumable job {job_id} has no valid cutoff")
+            if requested_cutoff is not None and requested_cutoff != stored_cutoff:
+                raise ValueError("cannot change cutoff while resuming an existing job")
+            if resumable["scope"] != requested_scope:
+                raise ValueError("cannot change native repost policy while resuming an existing job")
+            stored_start = parse_datetime(resumable["start_at"])
+            if requested_start is not None and stored_start is not None and requested_start != stored_start:
+                raise ValueError("cannot change start while resuming an existing job")
+            start = stored_start or requested_start
+            cutoff = stored_cutoff
         else:
+            start = requested_start
+            cutoff = requested_cutoff or utc_now()
             provisional = self.exports_root / username / "pending"
             job_id = self.db.create_job(
                 username=username,
                 cutoff_at=cutoff,
-                scope="authored+retweets" if include_retweets else "authored",
+                scope=requested_scope,
                 output_dir=provisional,
                 start_at=start,
             )
@@ -126,21 +144,34 @@ class UserExportService:
                 profile = self.db.get_user_snapshot(job_id)
                 if profile is None:
                     upstream_user = await self.adapter.resolve_user(username)
+                    if upstream_user is None:
+                        raise TargetUnavailable(f"no public user payload returned for @{username}")
                     user = UserSnapshot.from_object(upstream_user)
                     profile = user.to_dict()
                     self.db.save_user_snapshot(job_id, profile)
-                    start = start or user.created_at or EARLIEST_X
-                    start = max(start, EARLIEST_X)
-                    self.db.update_job(job_id, user_id=user.user_id, start_at=iso_utc(start))
                 else:
                     user = UserSnapshot.from_object(profile)
-                    start = start or user.created_at or EARLIEST_X
-                    start = max(start, EARLIEST_X)
 
-                if not self.db.all_windows(job_id):
-                    await self._collect_timeline(
-                        job_id, user.user_id, include_retweets, timeline_limit
+                if user.protected is True:
+                    raise AuthRequired(
+                        f"@{user.username} is protected; public export is unavailable"
                     )
+
+                start = max(start or user.created_at or EARLIEST_X, EARLIEST_X)
+                if start >= cutoff:
+                    raise ValueError("start must precede the fixed cutoff")
+                self.db.update_job(job_id, user_id=user.user_id, start_at=iso_utc(start))
+
+                timeline_suspect_empty = await self._collect_timeline(
+                    job_id,
+                    user.user_id,
+                    include_retweets,
+                    timeline_limit,
+                    start=start,
+                    cutoff=cutoff,
+                    statuses_count=user.statuses_count,
+                )
+                if not self.db.all_windows(job_id):
                     self.db.add_windows(
                         job_id,
                         "search",
@@ -155,8 +186,18 @@ class UserExportService:
                     max_posts_per_window=max_posts_per_window,
                 )
 
+                if timeline_suspect_empty and self.db.count_posts(job_id) == 0:
+                    raise UpstreamChanged(
+                        "both recent timeline endpoints returned no pages for a non-empty public account"
+                    )
+
                 windows = self.db.all_windows(job_id)
                 coverage = audit_coverage(windows, start, cutoff)
+                if timeline_suspect_empty:
+                    coverage["warnings"] = [
+                        *coverage.get("warnings", []),
+                        "recent timeline endpoints returned no pages; historical search supplied the observable records",
+                    ]
                 coverage_status = coverage["status"]
                 final_status = (
                     JobStatus.COMPLETED
@@ -200,6 +241,14 @@ class UserExportService:
                 error_message=str(exc),
             )
             raise
+        except TargetUnavailable as exc:
+            self.db.update_job(
+                job_id,
+                status=JobStatus.FAILED,
+                error_code="TARGET_UNAVAILABLE",
+                error_message=str(exc),
+            )
+            raise
         except UpstreamChanged as exc:
             self.db.update_job(
                 job_id,
@@ -219,8 +268,16 @@ class UserExportService:
             raise
 
     async def _collect_timeline(
-        self, job_id: str, user_id: str, include_retweets: bool, limit: int
-    ) -> None:
+        self,
+        job_id: str,
+        user_id: str,
+        include_retweets: bool,
+        limit: int,
+        *,
+        start: datetime,
+        cutoff: datetime,
+        statuses_count: int | None,
+    ) -> bool:
         sources = [
             (
                 "user_tweets",
@@ -258,6 +315,9 @@ class UserExportService:
                         source,
                         stream,
                         include_retweets=include_retweets,
+                        expected_user_id=user_id,
+                        start=start,
+                        cutoff=cutoff,
                     )
                     self._finish_scope_after_stream(
                         job_id,
@@ -281,6 +341,19 @@ class UserExportService:
                     "count": final_stats["accepted_count"],
                 },
             )
+
+        page_count = sum(
+            int(self.pages.scope_stats(job_id, scope_key)["page_count"])
+            for _, scope_key, _ in sources
+        )
+        suspect_empty = bool(statuses_count and statuses_count > 0 and page_count == 0)
+        if suspect_empty:
+            self.db.add_event(
+                job_id,
+                "TIMELINE_EMPTY_SUSPECT",
+                {"user_id": user_id, "reported_statuses_count": statuses_count},
+            )
+        return suspect_empty
 
     async def _collect_search_windows(
         self,
@@ -423,6 +496,9 @@ class UserExportService:
         stream: AsyncIterator[CollectorPage],
         *,
         include_retweets: bool,
+        expected_user_id: str | None = None,
+        start: datetime | None = None,
+        cutoff: datetime | None = None,
         window: TimeWindow | None = None,
     ) -> None:
         scope = self.pages.get_scope(job_id, scope_key)
@@ -439,7 +515,13 @@ class UserExportService:
             records: dict[str, PostRecord] = {}
             for item in page.items:
                 post = PostRecord.from_object(item, source=source)
+                if expected_user_id is not None and post.user_id != expected_user_id:
+                    continue
                 if post.is_retweet and not include_retweets:
+                    continue
+                if start is not None and post.created_at < start:
+                    continue
+                if cutoff is not None and post.created_at >= cutoff:
                     continue
                 if window is not None and not (window.start <= post.created_at < window.end):
                     continue

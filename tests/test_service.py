@@ -2,9 +2,10 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from fakes import FakeAdapter, post
+from fakes import FakeAdapter, post, user
 
-from x_scrap.domain.models import PostRecord, TimeWindow
+from x_scrap.adapters.base import AuthRequired, TargetUnavailable, UpstreamChanged
+from x_scrap.domain.models import PostRecord, TimeWindow, UserSnapshot
 from x_scrap.domain.pages import CollectorPage
 from x_scrap.service import UserExportService
 from x_scrap.storage.database import Database
@@ -210,3 +211,310 @@ async def test_terminal_page_commit_resumes_without_restarting_the_source(tmp_pa
     assert result["coverage_status"] == "COMPLETE_PUBLICLY_RETRIEVABLE"
     assert result["post_count"] == 1
     assert service.pages.get_scope(job_id, scope_key)["state"] == "COMPLETE"
+
+
+@pytest.mark.asyncio
+async def test_recent_timelines_filter_author_and_fixed_range_and_preserve_relations(tmp_path):
+    start = datetime(2024, 1, 1, tzinfo=UTC)
+    cutoff = start + timedelta(days=1)
+    original = post(1, start + timedelta(hours=1))
+    foreign = post(2, start + timedelta(hours=2), username="bob", user_id=8)
+    before_start = post(3, start - timedelta(seconds=1))
+    at_cutoff = post(4, cutoff)
+    reply = post(
+        5,
+        start + timedelta(hours=3),
+        inReplyToTweetId=1,
+        inReplyToTweetIdStr="1",
+    )
+    quote = post(
+        6,
+        start + timedelta(hours=4),
+        quotedTweet={"id": 99},
+        isQuoteStatus=True,
+        rawContent="long-form " + "x" * 400,
+        media={"photos": [{"url": "https://pbs.twimg.com/media/example"}]},
+    )
+    native_repost = post(
+        7,
+        start + timedelta(hours=5),
+        retweetedTweet={"id": 88},
+    )
+    adapter = FakeAdapter(
+        timeline=[original, foreign, before_start, native_repost],
+        replies=[original, reply, quote, at_cutoff],
+        searches={"from:alice": []},
+        resolved_user=user(statuses_count=7),
+    )
+    db = Database(tmp_path / "jobs.db")
+    service = UserExportService(
+        adapter,
+        db,
+        exports_root=tmp_path / "exports",
+        raw_root=tmp_path / "raw",
+        heartbeat_interval=999,
+    )
+
+    result = await service.export_user("Alice", start=start, cutoff=cutoff)
+    records = {row["post_id"]: row for row in db.iter_posts(result["job_id"])}
+
+    assert set(records) == {"1", "5", "6"}
+    assert records["1"]["sources"] == ["user_tweets", "user_tweets_and_replies"]
+    assert records["5"]["is_reply"] is True
+    assert records["5"]["in_reply_to_post_id"] == "1"
+    assert records["6"]["is_quote"] is True
+    assert records["6"]["quoted_post_id"] == "99"
+    assert records["6"]["text"].startswith("long-form ")
+    assert records["6"]["media"]["photos"][0]["url"].startswith("https://pbs.twimg.com/")
+    assert result["coverage_status"] == "COMPLETE_PUBLICLY_RETRIEVABLE"
+
+
+@pytest.mark.asyncio
+async def test_native_repost_policy_is_explicit_and_frozen_on_resume(tmp_path):
+    start = datetime(2024, 1, 1, tzinfo=UTC)
+    cutoff = start + timedelta(days=1)
+    native_repost = post(
+        7,
+        start + timedelta(hours=1),
+        retweetedTweet={"id": 88},
+    )
+    adapter = FakeAdapter(
+        timeline=[native_repost],
+        searches={"from:alice": []},
+        resolved_user=user(statuses_count=1),
+    )
+    db = Database(tmp_path / "jobs.db")
+    service = UserExportService(
+        adapter,
+        db,
+        exports_root=tmp_path / "exports",
+        raw_root=tmp_path / "raw",
+        heartbeat_interval=999,
+    )
+
+    result = await service.export_user(
+        "alice",
+        start=start,
+        cutoff=cutoff,
+        include_retweets=True,
+    )
+    stored = list(db.iter_posts(result["job_id"]))
+    assert len(stored) == 1
+    assert stored[0]["is_retweet"] is True
+    assert stored[0]["reposted_post_id"] == "88"
+
+    other_db = Database(tmp_path / "other-jobs.db")
+    other_service = UserExportService(
+        FakeAdapter(resolved_user=user(statuses_count=0)),
+        other_db,
+        exports_root=tmp_path / "other-exports",
+        raw_root=tmp_path / "other-raw",
+        heartbeat_interval=999,
+    )
+    other_db.create_job(
+        username="alice",
+        cutoff_at=cutoff,
+        scope="authored",
+        output_dir=tmp_path / "other-exports" / "alice" / "resume",
+        start_at=start,
+    )
+    with pytest.raises(ValueError, match="native repost policy"):
+        await other_service.export_user("alice", include_retweets=True)
+
+
+@pytest.mark.asyncio
+async def test_recent_timeline_scopes_resume_independently_even_when_search_windows_exist(tmp_path):
+    start = datetime(2024, 1, 1, tzinfo=UTC)
+    cutoff = start + timedelta(days=1)
+    timeline_value = post(1, start + timedelta(hours=1))
+    reply_values = [
+        post(2, start + timedelta(hours=2), inReplyToTweetId=1),
+        post(3, start + timedelta(hours=3), inReplyToTweetId=2),
+    ]
+    adapter = FakeAdapter(
+        timeline=[timeline_value],
+        replies=reply_values,
+        searches={"from:alice": []},
+        page_size=1,
+        resolved_user=user(statuses_count=3),
+    )
+    db = Database(tmp_path / "jobs.db")
+    service = UserExportService(
+        adapter,
+        db,
+        exports_root=tmp_path / "exports",
+        raw_root=tmp_path / "raw",
+        heartbeat_interval=999,
+    )
+    job_id = db.create_job(
+        username="alice",
+        cutoff_at=cutoff,
+        scope="authored",
+        output_dir=tmp_path / "exports" / "alice" / "resume",
+        start_at=start,
+    )
+    db.save_user_snapshot(job_id, UserSnapshot.from_object(user(statuses_count=3)).to_dict())
+    db.add_windows(job_id, "search", [TimeWindow(start, cutoff)])
+
+    timeline_scope = "timeline:user_tweets"
+    service.pages.ensure_scope(job_id, timeline_scope, "user_tweets")
+    timeline_page = CollectorPage(
+        source="user_tweets",
+        operation="UserTweets",
+        request_cursor=None,
+        next_cursor=None,
+        items=(timeline_value,),
+        raw_payload={"tweets": [timeline_value]},
+        page_index=0,
+    )
+    timeline_artifact = service.raw_store.write_content_addressed_json(
+        Path(job_id) / "pages" / "seed-timeline",
+        timeline_page.artifact_payload(),
+        prefix="page-000000",
+    )
+    service.pages.commit_page(
+        job_id,
+        timeline_scope,
+        timeline_page,
+        timeline_artifact,
+        [PostRecord.from_object(timeline_value, source="user_tweets")],
+    )
+    service.pages.complete_scope(job_id, timeline_scope)
+
+    reply_scope = "timeline:user_tweets_and_replies"
+    service.pages.ensure_scope(job_id, reply_scope, "user_tweets_and_replies")
+    reply_page = CollectorPage(
+        source="user_tweets_and_replies",
+        operation="UserTweetsAndReplies",
+        request_cursor=None,
+        next_cursor="offset:1",
+        items=(reply_values[0],),
+        raw_payload={"tweets": [reply_values[0]], "next_cursor": "offset:1"},
+        page_index=0,
+    )
+    reply_artifact = service.raw_store.write_content_addressed_json(
+        Path(job_id) / "pages" / "seed-replies",
+        reply_page.artifact_payload(),
+        prefix="page-000000",
+    )
+    service.pages.commit_page(
+        job_id,
+        reply_scope,
+        reply_page,
+        reply_artifact,
+        [PostRecord.from_object(reply_values[0], source="user_tweets_and_replies")],
+    )
+
+    result = await service.export_user("alice", resume=True)
+
+    assert not [request for request in adapter.page_requests if request[0] == "user_tweets"]
+    reply_requests = [
+        request for request in adapter.page_requests if request[0] == "user_tweets_and_replies"
+    ]
+    assert reply_requests[0][1] == "offset:1"
+    assert {row["post_id"] for row in db.iter_posts(job_id)} == {"1", "2", "3"}
+    assert result["page_count"] == 3
+    assert service.pages.get_scope(job_id, timeline_scope)["state"] == "COMPLETE"
+    assert service.pages.get_scope(job_id, reply_scope)["state"] == "COMPLETE"
+
+
+@pytest.mark.asyncio
+async def test_protected_target_stops_before_timeline_collection(tmp_path):
+    adapter = FakeAdapter(resolved_user=user(protected=True, statuses_count=10))
+    db = Database(tmp_path / "jobs.db")
+    service = UserExportService(
+        adapter,
+        db,
+        exports_root=tmp_path / "exports",
+        raw_root=tmp_path / "raw",
+        heartbeat_interval=999,
+    )
+
+    with pytest.raises(AuthRequired, match="protected"):
+        await service.export_user(
+            "alice",
+            start=datetime(2024, 1, 1, tzinfo=UTC),
+            cutoff=datetime(2024, 1, 2, tzinfo=UTC),
+        )
+
+    job = db.list_jobs()[0]
+    assert job["status"] == "HUMAN_REQUIRED"
+    assert job["error_code"] == "AUTH_REQUIRED"
+    assert adapter.page_requests == []
+
+
+@pytest.mark.asyncio
+async def test_unavailable_target_is_not_misclassified_as_schema_change(tmp_path):
+    adapter = FakeAdapter(resolved_user=None)
+    db = Database(tmp_path / "jobs.db")
+    service = UserExportService(
+        adapter,
+        db,
+        exports_root=tmp_path / "exports",
+        raw_root=tmp_path / "raw",
+        heartbeat_interval=999,
+    )
+
+    with pytest.raises(TargetUnavailable):
+        await service.export_user(
+            "missing-user",
+            start=datetime(2024, 1, 1, tzinfo=UTC),
+            cutoff=datetime(2024, 1, 2, tzinfo=UTC),
+        )
+
+    job = db.list_jobs()[0]
+    assert job["status"] == "FAILED"
+    assert job["error_code"] == "TARGET_UNAVAILABLE"
+
+
+@pytest.mark.asyncio
+async def test_silently_empty_recent_and_search_surfaces_are_not_reported_complete(tmp_path):
+    adapter = FakeAdapter(
+        searches={"from:alice": []},
+        resolved_user=user(statuses_count=4),
+    )
+    db = Database(tmp_path / "jobs.db")
+    service = UserExportService(
+        adapter,
+        db,
+        exports_root=tmp_path / "exports",
+        raw_root=tmp_path / "raw",
+        heartbeat_interval=999,
+    )
+
+    with pytest.raises(UpstreamChanged, match="returned no pages"):
+        await service.export_user(
+            "alice",
+            start=datetime(2024, 1, 1, tzinfo=UTC),
+            cutoff=datetime(2024, 1, 2, tzinfo=UTC),
+        )
+
+    job = db.list_jobs()[0]
+    assert job["status"] == "UPSTREAM_SCHEMA_CHANGED"
+    assert job["coverage_status"] == "UPSTREAM_SCHEMA_CHANGED"
+
+
+@pytest.mark.asyncio
+async def test_resume_rejects_changed_fixed_start_and_cutoff(tmp_path):
+    start = datetime(2024, 1, 1, tzinfo=UTC)
+    cutoff = datetime(2024, 1, 2, tzinfo=UTC)
+    db = Database(tmp_path / "jobs.db")
+    service = UserExportService(
+        FakeAdapter(resolved_user=user(statuses_count=0)),
+        db,
+        exports_root=tmp_path / "exports",
+        raw_root=tmp_path / "raw",
+        heartbeat_interval=999,
+    )
+    db.create_job(
+        username="alice",
+        cutoff_at=cutoff,
+        scope="authored",
+        output_dir=tmp_path / "exports" / "alice" / "resume",
+        start_at=start,
+    )
+
+    with pytest.raises(ValueError, match="change start"):
+        await service.export_user("alice", start=start + timedelta(hours=1))
+    with pytest.raises(ValueError, match="change cutoff"):
+        await service.export_user("alice", cutoff=cutoff + timedelta(hours=1))

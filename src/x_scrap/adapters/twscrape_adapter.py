@@ -9,7 +9,13 @@ from typing import Any
 from x_scrap.domain.pages import CollectorPage
 from x_scrap.security import redact_text, secure_sqlite_family
 
-from .base import AuthRequired, RateLimited, TransientUpstreamError, UpstreamChanged
+from .base import (
+    AuthRequired,
+    RateLimited,
+    TargetUnavailable,
+    TransientUpstreamError,
+    UpstreamChanged,
+)
 
 _REQUIRED_COOKIE_NAMES = ("auth_token", "ct0")
 
@@ -64,7 +70,9 @@ class TwscrapeAdapter:
         except Exception as exc:  # upstream exception types are not stable
             raise _classify(exc) from exc
         if result is None:
-            raise UpstreamChanged(f"no user payload returned for @{username.lstrip('@')}")
+            raise TargetUnavailable(
+                f"no public user payload returned for @{username.lstrip('@')}"
+            )
         return result
 
     async def iter_user_tweet_pages(
@@ -268,6 +276,17 @@ def _classify(exc: Exception) -> Exception:
     lowered = message.lower()
     if "rate" in name or "429" in lowered or "rate limit" in lowered:
         return RateLimited(message, reset_at=_reset_at(exc))
+    if any(
+        token in lowered
+        for token in (
+            "user not found",
+            "account not found",
+            "does not exist",
+            "account suspended",
+            "user unavailable",
+        )
+    ):
+        return TargetUnavailable(message)
     if "noaccount" in name or any(
         token in lowered
         for token in ("login", "unauthorized", "forbidden", "challenge", "cookie")

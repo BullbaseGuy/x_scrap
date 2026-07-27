@@ -21,6 +21,10 @@ class RateLimited(AdapterError):
         self.reset_at = reset_at
 
 
+class TargetUnavailable(AdapterError):
+    """The requested username is missing, suspended, or otherwise unavailable."""
+
+
 class UpstreamChanged(AdapterError):
     """The upstream GraphQL schema or operation surface changed."""
 

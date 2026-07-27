@@ -13,7 +13,13 @@ from types import SimpleNamespace
 import pytest
 
 import x_scrap.adapters.twscrape_adapter as adapter_module
-from x_scrap.adapters.base import AuthRequired, RateLimited, TransientUpstreamError, UpstreamChanged
+from x_scrap.adapters.base import (
+    AuthRequired,
+    RateLimited,
+    TargetUnavailable,
+    TransientUpstreamError,
+    UpstreamChanged,
+)
 
 
 class FakeResponse:
@@ -196,6 +202,9 @@ def test_upstream_errors_are_classified_and_redacted_conservatively():
 
     assert isinstance(adapter_module._classify(type("NoAccountError", (RuntimeError,), {})()), AuthRequired)
     assert isinstance(
+        adapter_module._classify(RuntimeError("user not found")), TargetUnavailable
+    )
+    assert isinstance(
         adapter_module._classify(RuntimeError("GraphQL operation missing 404")), UpstreamChanged
     )
     assert isinstance(
@@ -227,3 +236,20 @@ async def test_accounts_database_is_private_after_init_and_cookie_update(monkeyp
 
     if os.name == "posix":
         assert stat.S_IMODE(database.stat().st_mode) == 0o600
+
+
+@pytest.mark.asyncio
+async def test_resolve_user_none_is_target_unavailable_not_schema_change(monkeypatch, tmp_path):
+    class FakeAPI:
+        def __init__(self, accounts_db: str, *, proxy: str | None = None):
+            self.pool = SimpleNamespace()
+
+        async def user_by_login(self, username: str):
+            assert username == "missing"
+            return None
+
+    _install_fake_twscrape(monkeypatch, FakeAPI)
+    adapter = adapter_module.TwscrapeAdapter(tmp_path / "accounts.db")
+
+    with pytest.raises(TargetUnavailable, match="no public user payload"):
+        await adapter.resolve_user("@missing")
