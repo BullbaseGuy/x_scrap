@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "state_revision": 10,
+  "state_revision": 11,
   "task_id": "x-user-timeline-v1",
   "title": "Public X user timeline export with resumable historical coverage",
   "status": "WAITING_HUMAN",
@@ -33,15 +33,16 @@
   },
   "base_sha_at_start": "340bf6774ae1d2942b581b2ed2eaf660c9ff84eb",
   "last_product_commit_sha": "d23401ad03ac0d9d7ef2460009f2725b41175351",
-  "last_successful_step": "W07 evidence-graph/export hardening and W08 reset-aware recovery were atomically published after compile, Ruff, 83 tests, state validation, secret audit, and diff checks passed",
+  "last_successful_step": "W07-W08 atomic publication and all permanent PR gates passed: compile, Ruff, 83 tests, Product Gate, task-state validation, and secret audit",
   "next_action": "Run the W09 local authenticated preflight and interruption/resume E2E without sharing Cookie values",
-  "updated_at_utc": "2026-07-27T15:07:18Z",
+  "updated_at_utc": "2026-07-27T15:10:07Z",
   "gate_results": {
-    "compile": "PASS_ATOMIC_APPLY",
-    "pytest": "PASS_83_ATOMIC_APPLY",
-    "ruff": "PASS_ATOMIC_APPLY",
-    "state": "PASS_ATOMIC_APPLY",
-    "secret_audit": "PASS_ATOMIC_APPLY"
+    "compile": "PASS_CI",
+    "pytest": "PASS_83_CI",
+    "ruff": "PASS_CI",
+    "product_gate": "PASS_CI",
+    "state": "PASS_CI",
+    "secret_audit": "PASS_CI"
   },
   "retry_budget": {
     "infrastructure_limit": 3,

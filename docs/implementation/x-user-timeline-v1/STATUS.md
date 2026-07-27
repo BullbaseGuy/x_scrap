@@ -23,6 +23,7 @@
 - W07 exact evidence-graph coverage validation, same-ID material conflict preservation, `SOURCE_CONFLICT`, immutable raw verification, and atomic self-verifying export bundles.
 - W08 reset-aware 429 waits, automatic cursor resume for timelines and search, root-cause retry budgets, explicit recovery events, and non-recoverable error separation.
 - W07-W08 were published atomically after Python compilation, Ruff, all 83 deterministic tests, task-state validation, secret audit, and `git diff --check` passed.
+- The permanent PR Test, Product Gate, State Consistency, and Secret Audit workflows all passed after publication.
 - All temporary write-capable, diagnostic, snapshot, archive, and chunk surfaces were removed in the same gated publication commit.
 
 ## Human gate — W09
