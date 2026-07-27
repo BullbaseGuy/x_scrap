@@ -26,29 +26,31 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
-      - name: Reconstruct and verify W04 payload
+      - name: Reconstruct and verify W04 patch
         shell: bash
         run: |
           set -euo pipefail
-          cat .w04-upload/chunk-* > /tmp/w04-payload.tar.gz.b64
-          base64 --decode /tmp/w04-payload.tar.gz.b64 > /tmp/w04-payload.tar.gz
-          echo '7f647e5626d9f6192b7f3cb4bbc1ce35aa888e01581b1c996278804c09afc9d1  /tmp/w04-payload.tar.gz' | sha256sum --check --strict
-          tar -xzf /tmp/w04-payload.tar.gz -C .
-          rm -rf .w04-upload .github/workflows/temp-branch-snapshot.yml
+          cat .w04-patch/chunk-* > /tmp/w04.patch.gz.b64
+          base64 --decode /tmp/w04.patch.gz.b64 > /tmp/w04.patch.gz
+          echo '0cdfd8300372afa5fc8bb2fb55cc9025c17e39c79402a6a057be993149835411  /tmp/w04.patch.gz' | sha256sum --check --strict
+          gzip --decompress --stdout /tmp/w04.patch.gz > /tmp/w04.patch
+          git apply --check --binary /tmp/w04.patch
+          git apply --index --binary /tmp/w04.patch
+          rm -rf .w04-upload .w04-patch .github/workflows/temp-branch-snapshot.yml
+          git add -A
       - name: Run complete deterministic gate
         shell: bash
         run: |
           set -euo pipefail
           python -m pip install -e '.[dev]'
           python scripts/devflow/run_gate.py repository-full
-          git diff --check
+          git diff --check --cached
+          test -z "$(git ls-files '.w04-upload/**' '.w04-patch/**' '.github/workflows/temp-branch-snapshot.yml')"
       - name: Commit W04 product changes and remove temporary surface
         shell: bash
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -A
-          test -z "$(git ls-files '.w04-upload/**' '.github/workflows/temp-branch-snapshot.yml')"
           git commit -m 'feat: harden local credential and data isolation'
           git push origin "HEAD:${TARGET_BRANCH}"
