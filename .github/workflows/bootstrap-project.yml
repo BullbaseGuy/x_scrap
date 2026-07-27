@@ -6,16 +6,27 @@ on:
       - feature/x-user-timeline-v1
     paths:
       - .bootstrap/manifest.json
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .bootstrap/manifest.json
+      - .github/workflows/bootstrap-project.yml
 
 permissions:
   contents: write
 
 jobs:
   bootstrap:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      TARGET_BRANCH: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref_name }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TARGET_BRANCH }}
       - name: Reconstruct verified project archive
         shell: bash
         run: |
@@ -36,4 +47,4 @@ jobs:
             exit 0
           fi
           git commit -m "build: bootstrap resumable X collector"
-          git push
+          git push origin "HEAD:${TARGET_BRANCH}"
