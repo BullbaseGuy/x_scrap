@@ -14,31 +14,84 @@ Validate the remaining behavior that cannot be truthfully proven with sanitized 
 
 ## Procedure
 
+### 1. Install and preflight
+
 ```powershell
+git clone https://github.com/BullbaseGuy/x_scrap.git
+cd x_scrap
+git switch feature/x-user-timeline-v1
+
+py -3.12 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -e ".[dev]"
+
 $env:X_SCRAP_HOME = 'D:\x_scrap_data'
 $env:TWS_TELEMETRY = '0'
+$env:DO_NOT_TRACK = '1'
 
-python scripts/live/run_user_export_smoke.py --home $env:X_SCRAP_HOME --preflight-only
+python scripts/live/run_user_export_smoke.py `
+  --home $env:X_SCRAP_HOME `
+  --preflight-only
+```
 
+If no active local account is listed, add the user's browser session through the no-echo prompt:
+
+```powershell
+x-scrap --home $env:X_SCRAP_HOME auth add-cookie --label primary
+```
+
+### 2. Small live export
+
+```powershell
 python scripts/live/run_user_export_smoke.py xdevelopers `
   --home $env:X_SCRAP_HOME `
   --start 2026-07-01T00:00:00Z `
   --acknowledge-live-x
 ```
 
-Then run one larger public account over a historical range. During that task, stop the process after at least one page is committed and execute the identical command again. The second run must reuse the same job and continue from the stored cursor without replacing committed raw evidence.
+Record only the returned job ID, status, coverage status, bundle digest, and output directory. Do not copy raw authenticated responses into chat or GitHub.
 
-## Evidence to report without secrets
+### 3. Real interruption and cursor resume
 
-- command options excluding credentials;
-- job ID and target username;
-- final job and coverage status;
-- page/post/window counts;
-- whether a real 429 occurred and, if so, the redacted wait event;
-- first run's last committed scope/page/cursor position;
-- resumed run's first requested scope/page/cursor position;
-- `verify_export_bundle()` result and bundle digest;
-- any account challenge or upstream operation failure, with credential values removed.
+Choose a larger public account and a historical range. Start the task with a conservative page budget:
+
+```powershell
+python scripts/live/run_user_export_smoke.py <large_public_username> `
+  --home $env:X_SCRAP_HOME `
+  --start 2025-01-01T00:00:00Z `
+  --initial-window-days 30 `
+  --max-posts-per-window 5000 `
+  --acknowledge-live-x
+```
+
+After at least one `PAGE_COMMITTED` event appears, stop the process with `Ctrl+C`. Run the identical command again. The second process must reuse the same job ID and continue from the stored page/cursor position without replacing already committed content-addressed raw evidence.
+
+### 4. Generate a safe evidence summary
+
+Generate a redacted evidence file for each live job. This helper does not include Cookie values, authorization headers, raw response bodies, output paths, or plaintext cursor values. Cursor continuity is represented only by SHA-256 fingerprints.
+
+```powershell
+python scripts/live/collect_w09_evidence.py `
+  --home $env:X_SCRAP_HOME `
+  --job-id <job_id>
+```
+
+The default output is:
+
+```text
+D:\x_scrap_data\w09-evidence\<job_id>.json
+```
+
+Open the JSON and manually review it before sharing. The file should report:
+
+- job ID, target username, fixed start/cutoff, final job and coverage status;
+- page, post, scope, window, event, and conflict counts;
+- one run segment before interruption and a resumed run segment;
+- matching last-page `next_cursor_fingerprint` and resumed first-page `request_cursor_fingerprint`;
+- redacted 429/reset wait evidence when a real 429 occurred;
+- `verify_export_bundle()` status and bundle digest;
+- explicit confirmation that Cookie, authorization header, raw response body, and plaintext cursor values are omitted.
 
 ## Exit criteria
 
@@ -48,4 +101,4 @@ Then run one larger public account over a historical range. During that task, st
 - final bundle verifies successfully;
 - no secrets appear in repository or supplied evidence.
 
-This stage is an explicit human gate because the required browser session belongs only on the user's local machine.
+This stage is an explicit human gate because the required browser session belongs only on the user's local machine. After the redacted evidence passes review, continue automatically through W10, PR readiness and merge, and exact-main Post-Merge.

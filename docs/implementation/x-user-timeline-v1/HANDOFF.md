@@ -1,6 +1,6 @@
 # Handoff
 
-Resume directly from `W09_plan.md` on `feature/x-user-timeline-v1`.
+Resume from `W09_plan.md` on `feature/x-user-timeline-v1` after the W07-W08 atomic publication gate succeeds.
 
 Before changing product behavior:
 
@@ -12,4 +12,4 @@ Before changing product behavior:
 6. do not add real Cookies, account DBs, exports, or captured authorization data to Git, tests, Issues, PRs, or chat;
 7. keep Codex and paid API/proxy usage disabled.
 
-W00-W08 are implemented and passed the atomic publication gate with 83 deterministic tests. W09 is a real human gate: only the user can run the authorized local live smoke and interruption/resume procedure. Once its redacted evidence passes, continue automatically through W10, PR readiness/merge, and exact-main Post-Merge.
+W09 is a real human gate: only the user can run the authorized local live smoke and interruption/resume procedure. Generate the safe summary with `scripts/live/collect_w09_evidence.py`; it omits credentials, raw bodies, local paths, and plaintext cursors. Once that redacted evidence passes, continue automatically through W10, PR readiness/merge, and exact-main Post-Merge.

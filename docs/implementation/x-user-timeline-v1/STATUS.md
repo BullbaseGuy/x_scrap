@@ -22,13 +22,12 @@
 - W06 canonical resolved-username search, stable-user-ID enforcement, whole-second half-open windows, integer midpoint splits, noisy-result filtering, dense-window recursion, and independent child-scope resume.
 - W07 exact evidence-graph coverage validation, same-ID material conflict preservation, `SOURCE_CONFLICT`, immutable raw verification, and atomic self-verifying export bundles.
 - W08 reset-aware 429 waits, automatic cursor resume for timelines and search, root-cause retry budgets, explicit recovery events, and non-recoverable error separation.
-- W07-W08 were published atomically after Python compilation, Ruff, all 83 deterministic tests, task-state validation, secret audit, and `git diff --check` passed.
-- The permanent PR Test, Product Gate, State Consistency, and Secret Audit workflows all passed after publication.
-- All temporary write-capable, diagnostic, snapshot, archive, and chunk surfaces were removed in the same gated publication commit.
+- W09 now includes a redacted evidence collector that verifies the export bundle, summarizes page/window/recovery counts, and proves cursor continuity with SHA-256 fingerprints rather than plaintext cursor values.
+- Deterministic validation currently contains 85 tests; compile, pytest, task-state validation, and secret audit pass locally. Permanent Ruff and Product Gate validation are pending for this helper update.
 
 ## Human gate — W09
 
-The remaining acceptance evidence requires the user's authorized browser Cookie and live X traffic on the user's local machine. Run the commands and interruption/resume procedure in `W09_plan.md`. Do not send Cookie values, local account databases, raw authorization headers, or unredacted raw responses.
+The remaining acceptance evidence requires the user's authorized browser Cookie and live X traffic on the user's local machine. Run the commands and interruption/resume procedure in `W09_plan.md`, then generate the shareable summary with `scripts/live/collect_w09_evidence.py`. Do not send Cookie values, local account databases, raw authorization headers, raw response bodies, or plaintext cursor values.
 
 ## Remaining after W09
 

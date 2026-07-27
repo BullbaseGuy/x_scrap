@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "state_revision": 11,
+  "state_revision": 12,
   "task_id": "x-user-timeline-v1",
   "title": "Public X user timeline export with resumable historical coverage",
   "status": "WAITING_HUMAN",
@@ -23,7 +23,7 @@
   "human_gate": {
     "required": true,
     "reason": "W09 requires the user's authorized local X browser session and a real interruption/resume run; credentials must not enter GitHub or chat.",
-    "minimum_action": "Run the W09 preflight and authenticated smoke commands from W09_plan.md locally, then provide only the redacted job/coverage/bundle and resume evidence.",
+    "minimum_action": "Run the W09 preflight and authenticated smoke commands from W09_plan.md locally, then provide only the generated redacted evidence JSON.",
     "resume_from": "W09 local opt-in authenticated E2E"
   },
   "notification": {
@@ -33,16 +33,16 @@
   },
   "base_sha_at_start": "340bf6774ae1d2942b581b2ed2eaf660c9ff84eb",
   "last_product_commit_sha": "d23401ad03ac0d9d7ef2460009f2725b41175351",
-  "last_successful_step": "W07-W08 atomic publication and all permanent PR gates passed: compile, Ruff, 83 tests, Product Gate, task-state validation, and secret audit",
-  "next_action": "Run the W09 local authenticated preflight and interruption/resume E2E without sharing Cookie values",
-  "updated_at_utc": "2026-07-27T15:10:07Z",
+  "last_successful_step": "W09 redacted evidence collector, cursor-fingerprint resume summary, and updated local runbook passed compile, 85 tests, task-state validation, and secret audit locally",
+  "next_action": "Pass permanent CI for the W09 evidence helper, then run the local authenticated preflight and interruption/resume E2E without sharing Cookie values",
+  "updated_at_utc": "2026-07-27T15:17:40Z",
   "gate_results": {
-    "compile": "PASS_CI",
-    "pytest": "PASS_83_CI",
-    "ruff": "PASS_CI",
-    "product_gate": "PASS_CI",
-    "state": "PASS_CI",
-    "secret_audit": "PASS_CI"
+    "compile": "PASS_85_LOCAL",
+    "pytest": "PASS_85_LOCAL",
+    "ruff": "PENDING_CI",
+    "product_gate": "PENDING_CI",
+    "state": "PASS_LOCAL",
+    "secret_audit": "PASS_LOCAL"
   },
   "retry_budget": {
     "infrastructure_limit": 3,

@@ -140,3 +140,15 @@ The authenticated smoke runner is local-only and refuses CI:
 python scripts/live/run_user_export_smoke.py --home D:\x_scrap_data --preflight-only
 python scripts/live/run_user_export_smoke.py xdevelopers --home D:\x_scrap_data --acknowledge-live-x
 ```
+
+## Local live acceptance evidence
+
+Authenticated live X testing is never performed in GitHub Actions. For the opt-in W09 acceptance run, follow [`W09_plan.md`](docs/implementation/x-user-timeline-v1/W09_plan.md). After a live job, generate a redacted evidence summary with:
+
+```powershell
+python scripts/live/collect_w09_evidence.py `
+  --home $env:X_SCRAP_HOME `
+  --job-id <job_id>
+```
+
+The summary omits Cookie values, authorization headers, raw response bodies, local paths, and plaintext cursor values; cursor resume continuity is represented by fingerprints only.

@@ -108,3 +108,15 @@ python scripts/live/run_user_export_smoke.py xdevelopers `
 ```
 
 Never pass Cookie values as command-line arguments. Add them once through the no-echo `x-scrap auth add-cookie` prompt.
+
+## 8. Produce redacted W09 evidence
+
+After an authorized local live run, create a safe summary without copying Cookie values, raw authenticated responses, or plaintext cursors:
+
+```powershell
+python scripts/live/collect_w09_evidence.py `
+  --home $env:X_SCRAP_HOME `
+  --job-id <job_id>
+```
+
+The helper verifies the published export bundle when present, summarizes job/page/window/recovery counts, and represents cursor continuity only with short SHA-256 fingerprints. Manually review the generated JSON under `X_SCRAP_HOME\w09-evidence` before sharing it.
