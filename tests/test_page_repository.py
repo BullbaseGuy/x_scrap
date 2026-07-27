@@ -4,7 +4,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-
 from fakes import post
 
 from x_scrap.domain.models import PostRecord
@@ -78,6 +77,7 @@ def test_page_commit_is_idempotent_and_advances_resume_cursor(tmp_path):
     assert pages[0]["artifact_size"] == artifact.size
     assert pages[0]["oldest_post_at"] == "2026-01-01T00:00:00Z"
     assert pages[0]["newest_post_at"] == "2026-01-01T00:00:00Z"
+    assert repository.page_post_ids(job_id, scope_key, 0) == ["1"]
 
     stats = repository.scope_stats(job_id, scope_key)
     assert stats == {
@@ -217,4 +217,8 @@ def test_page_repository_migrates_existing_page_table(tmp_path):
 
     with database.connect() as conn:
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(harvest_pages)")}
+        page_post_table = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='harvest_page_posts'"
+        ).fetchone()
     assert {"oldest_post_at", "newest_post_at"}.issubset(columns)
+    assert page_post_table is not None
