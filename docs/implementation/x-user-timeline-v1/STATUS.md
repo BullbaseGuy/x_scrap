@@ -25,13 +25,21 @@
 - W09 deterministic preparation now includes a one-command Windows orchestrator, four live cases, an exact committed-cursor resume contract, strict sanitized evidence, and automatic `W09_ACCEPTANCE.json` generation.
 - The W09 preparation publication passed SHA-256 reconstruction, Python compilation, Ruff, the complete pytest suite, canonical task-state validation, repository secret audit, diff checks, and temporary-surface removal.
 - A subsequent clean repository state passed the permanent Test, Product Gate, State Consistency, and Secret Audit workflows.
-- All staging payloads, diagnostic workflows, and write-capable preparation workflows were removed in the same gated publication commit.
+- The first authorized local run exposed the `twscrape==0.19.2` empty-page-guard condition: a recent timeline generator can stop after three empty or filtered pages while its last content page still carries a cursor.
+- Hotfix `7579f3ed11c608e7a23c784bc2260144a882a067` now records that recent timeline as explicit truncation and keeps exact date-partitioned Search as the authoritative coverage surface; Search cursor exhaustion and recursive splitting remain strict.
+- The hotfix and its regression fixture passed compilation, Ruff, the complete pytest suite, state validation, secret audit, diff checks, and temporary-workflow removal.
+- All staging payloads, diagnostic workflows, and write-capable preparation/hotfix workflows were removed by their gated publication commits.
 
 ## Human gate — W09
 
-The remaining evidence requires the user's authorized browser session and live X traffic on the user's local machine. Follow `W09_LIVE_RUNBOOK.md` and run:
+Update the local checkout to the latest `feature/x-user-timeline-v1`, reinstall the editable package, and rerun the public-target export or the one-command W09 runner. The previously failed job and raw artifacts may remain in the private state directory; no Cookie re-import or destructive cleanup is required.
 
 ```powershell
+git fetch origin
+git switch feature/x-user-timeline-v1
+git pull --ff-only origin feature/x-user-timeline-v1
+python -m pip install -e ".[dev]"
+
 .\scripts\live\run_w09.ps1 `
   -Home D:\x_scrap_private `
   -SmallUsername <PUBLIC_USERNAME> `
@@ -53,5 +61,6 @@ Before sharing, manually inspect the acceptance file. Do not send Cookie values,
 ## Known source limitations
 
 - Search and timeline completeness describe the currently observable source surface; deleted, protected, suspended, de-indexed, or search-suppressed posts may remain unavailable.
+- Recent timeline endpoints may stop after an upstream empty-page guard while a cursor remains; this is reported explicitly and does not weaken Search-window completeness requirements.
 - Historical native repost indexing is not guaranteed.
 - X may change its internal web GraphQL operations without notice.
