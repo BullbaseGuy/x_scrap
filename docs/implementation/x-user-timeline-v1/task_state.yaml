@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "state_revision": 16,
+  "state_revision": 17,
   "task_id": "x-user-timeline-v1",
   "title": "Public X user timeline export with resumable historical coverage",
   "status": "WAITING_HUMAN",
@@ -23,8 +23,8 @@
   "human_gate": {
     "required": true,
     "reason": "W09 requires the user's authorized local X browser session and real live traffic; credentials must not enter GitHub or chat.",
-    "minimum_action": "Run scripts/live/run_w09.ps1 locally with a private X_SCRAP_HOME and public targets, manually review W09_ACCEPTANCE.json, then provide only that sanitized acceptance file.",
-    "resume_from": "W09 one-command authorized local E2E"
+    "minimum_action": "Pull the timeline pagination hotfix, reinstall the editable package, rerun scripts/live/run_w09.ps1 locally, manually review W09_ACCEPTANCE.json, then provide only that sanitized acceptance file.",
+    "resume_from": "W09 authorized local E2E after recent-timeline pagination hotfix"
   },
   "notification": {
     "control_issue_number": 1,
@@ -32,17 +32,17 @@
     "interruption_sent": false
   },
   "base_sha_at_start": "340bf6774ae1d2942b581b2ed2eaf660c9ff84eb",
-  "last_product_commit_sha": "2db8e80c54c8e6acef3c51430b2921ad635c586e",
-  "last_successful_step": "W09 one-command orchestration and strict acceptance evidence passed the atomic publication gate and permanent Test, Product Gate, State Consistency, and Secret Audit workflows",
-  "next_action": "Run the single local PowerShell command in W09_LIVE_RUNBOOK.md and return only the manually reviewed W09_ACCEPTANCE.json",
-  "updated_at_utc": "2026-07-27T16:06:56Z",
+  "last_product_commit_sha": "7579f3ed11c608e7a23c784bc2260144a882a067",
+  "last_successful_step": "Live W09 exposed the twscrape empty-page guard; recent timeline truncation is now explicit while exact Search remains authoritative, and the hotfix passed the complete atomic gate",
+  "next_action": "Pull the latest feature branch, reinstall with pip install -e .[dev], rerun the same public target or run_w09.ps1, then return only the reviewed W09_ACCEPTANCE.json",
+  "updated_at_utc": "2026-07-28T01:57:36Z",
   "gate_results": {
-    "compile": "PASS_CI",
-    "pytest": "PASS_FULL_SUITE_CI",
-    "ruff": "PASS_CI",
-    "product_gate": "PASS_CI",
-    "state": "PASS_CI",
-    "secret_audit": "PASS_CI"
+    "compile": "PASS_HOTFIX_ATOMIC_GATE",
+    "pytest": "PASS_FULL_SUITE_HOTFIX_ATOMIC_GATE",
+    "ruff": "PASS_HOTFIX_ATOMIC_GATE",
+    "product_gate": "PASS_HOTFIX_ATOMIC_GATE",
+    "state": "PASS_HOTFIX_ATOMIC_GATE",
+    "secret_audit": "PASS_HOTFIX_ATOMIC_GATE"
   },
   "retry_budget": {
     "infrastructure_limit": 3,
