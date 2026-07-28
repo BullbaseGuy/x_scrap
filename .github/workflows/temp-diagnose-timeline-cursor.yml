@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Print exact hotfix anchor counts
+      - name: Execute payload and print concise traceback
         shell: bash
         env:
           REPOSITORY: ${{ github.repository }}
@@ -26,22 +26,24 @@ jobs:
           cd repo
           python - <<'PY'
           from pathlib import Path
+          import textwrap
+          import traceback
 
-          service = Path('src/x_scrap/service.py').read_text(encoding='utf-8')
-          anchors = [
-              '''                timeline_suspect_empty = await self._collect_timeline(\n''',
-              '''                if timeline_suspect_empty:\n                    coverage["warnings"] = [\n                        *coverage.get("warnings", []),\n                        "recent timeline endpoints returned no pages; historical search supplied the observable records",\n                    ]\n                coverage_status = coverage["status"]\n''',
-              '''    ) -> bool:\n        sources = [\n''',
-              '''        ]\n        for source, scope_key, factory in sources:\n''',
-              '''                if scope["state"] == "EXHAUSTED":\n                    self.pages.complete_scope(job_id, scope_key)\n                    break\n\n                stats = self.pages.scope_stats(job_id, scope_key)\n''',
-              '''                    self._finish_scope_after_stream(\n                        job_id,\n                        scope_key,\n                        allow_limit=limit > 0,\n                        limit_reason="CONFIGURED_TIMELINE_LIMIT",\n                    )\n                    break\n''',
-              '''            self.db.add_event(\n                job_id,\n                "TIMELINE_SOURCE_COMPLETE",\n                {\n                    "source": source,\n                    "state": final_scope["state"] if final_scope else "UNKNOWN",\n                    "pages": final_stats["page_count"],\n                    "count": final_stats["accepted_count"],\n                },\n            )\n''',
-              '''        return suspect_empty\n\n    async def _collect_search_windows(\n''',
-          ]
-          for index, anchor in enumerate(anchors, start=1):
-              print(f'anchor_{index}={service.count(anchor)}')
-          tests = Path('tests/test_service.py').read_text(encoding='utf-8')
-          print(f'test_import_anchor={tests.count("from datetime import UTC, datetime, timedelta\\n")}')
-          print(f'test_already_present={"test_timeline_empty_page_guard_is_explicitly_truncated" in tests}')
+          source_path = Path('.github/workflows/temp-fix-timeline-cursor.yml')
+          source = source_path.read_text(encoding='utf-8')
+          start_marker = "          python - <<'PY'\n"
+          end_marker = "\n          PY\n"
+          try:
+              payload = source.split(start_marker, 1)[1].split(end_marker, 1)[0]
+              exec(
+                  compile(textwrap.dedent(payload), str(source_path), 'exec'),
+                  {'__name__': '__main__'},
+              )
+          except BaseException:
+              traceback.print_exc()
+              raise SystemExit(1)
+          print('payload_success=true')
+          print('service_changed=', Path('src/x_scrap/service.py').is_file())
+          print('test_present=', 'test_timeline_empty_page_guard_is_explicitly_truncated' in Path('tests/test_service.py').read_text(encoding='utf-8'))
           raise SystemExit(1)
           PY
