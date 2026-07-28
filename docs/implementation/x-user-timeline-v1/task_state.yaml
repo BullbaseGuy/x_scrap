@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "state_revision": 17,
+  "state_revision": 18,
   "task_id": "x-user-timeline-v1",
   "title": "Public X user timeline export with resumable historical coverage",
   "status": "WAITING_HUMAN",
@@ -33,16 +33,16 @@
   },
   "base_sha_at_start": "340bf6774ae1d2942b581b2ed2eaf660c9ff84eb",
   "last_product_commit_sha": "7579f3ed11c608e7a23c784bc2260144a882a067",
-  "last_successful_step": "Live W09 exposed the twscrape empty-page guard; recent timeline truncation is now explicit while exact Search remains authoritative, and the hotfix passed the complete atomic gate",
+  "last_successful_step": "The live timeline pagination hotfix and its regression test passed the atomic gate and all permanent Test, Product Gate, State Consistency, and Secret Audit workflows",
   "next_action": "Pull the latest feature branch, reinstall with pip install -e .[dev], rerun the same public target or run_w09.ps1, then return only the reviewed W09_ACCEPTANCE.json",
-  "updated_at_utc": "2026-07-28T01:57:36Z",
+  "updated_at_utc": "2026-07-28T01:59:27Z",
   "gate_results": {
-    "compile": "PASS_HOTFIX_ATOMIC_GATE",
-    "pytest": "PASS_FULL_SUITE_HOTFIX_ATOMIC_GATE",
-    "ruff": "PASS_HOTFIX_ATOMIC_GATE",
-    "product_gate": "PASS_HOTFIX_ATOMIC_GATE",
-    "state": "PASS_HOTFIX_ATOMIC_GATE",
-    "secret_audit": "PASS_HOTFIX_ATOMIC_GATE"
+    "compile": "PASS_CI",
+    "pytest": "PASS_FULL_SUITE_CI",
+    "ruff": "PASS_CI",
+    "product_gate": "PASS_CI",
+    "state": "PASS_CI",
+    "secret_audit": "PASS_CI"
   },
   "retry_budget": {
     "infrastructure_limit": 3,
