@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "project": {
+    "default_branch": "main",
+    "allowed_actors": ["tyxq428"],
+    "notification_mentions": ["tyxq428"],
+    "python_version": "3.12"
+  },
+  "branches": {
+    "work_prefix": "feature/",
+    "task_data_prefix": "task/agent-",
+    "publish_prefix": "agent/"
+  },
+  "features": {
+    "automatic_merge": false,
+    "agent_execution": "disabled",
+    "relay_paid_probe": false,
+    "branch_gc_execute": false
+  },
+  "paths": {
+    "docs_only": ["README.md", "LICENSE", "docs/*.md", "docs/**/*.md"],
+    "framework": [
+      "AGENTS.md",
+      ".devflow/**",
+      ".github/workflows/**",
+      "docs/process/**",
+      "docs/implementation/**",
+      "scripts/devflow/**",
+      "tests/test_devflow*.py",
+      "pyproject.toml"
+    ],
+    "protected": [
+      ".github/**",
+      ".devflow/**",
+      "AGENTS.md",
+      "docs/process/**",
+      "docs/implementation/**",
+      "scripts/devflow/**",
+      ".env",
+      ".env.*",
+      "secrets/**"
+    ]
+  },
+  "recovery": {
+    "infrastructure_retry_limit": 3,
+    "same_root_cause_limit": 2
+  },
+  "workflows": {
+    "state_consistency": "Devflow State Consistency",
+    "product_gate": "Devflow Product Gate",
+    "post_merge": "Devflow Post Merge",
+    "secret_audit": "Devflow Secret Audit"
+  }
+}

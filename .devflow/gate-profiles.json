@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "profiles": {
+    "repository-full": [
+      ["python", "-m", "compileall", "-q", "src", "tests", "scripts"],
+      ["ruff", "check", "src", "tests", "scripts"],
+      ["pytest", "-q"],
+      ["python", "scripts/devflow/validate_state.py", "--all-active", "--no-git"],
+      ["python", "scripts/devflow/secret_audit.py"]
+    ],
+    "post-merge": [
+      ["python", "-m", "compileall", "-q", "src", "tests", "scripts"],
+      ["ruff", "check", "src", "tests", "scripts"],
+      ["pytest", "-q"],
+      ["python", "scripts/devflow/validate_state.py", "--all-active", "--no-git"],
+      ["python", "scripts/devflow/secret_audit.py"]
+    ]
+  }
+}

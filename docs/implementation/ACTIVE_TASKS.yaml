@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "tasks": [
+    {
+      "task_id": "x-user-timeline-v1",
+      "state_path": "docs/implementation/x-user-timeline-v1/task_state.yaml",
+      "status": "WAITING_HUMAN",
+      "branch": "feature/x-user-timeline-v1",
+      "pull_request": 2,
+      "current_stage": "W09"
+    }
+  ]
+}

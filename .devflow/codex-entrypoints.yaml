@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "policy": "disabled",
+  "allowed_entrypoints": [],
+  "codex_calls": 0,
+  "notes": "Agent execution remains disabled until explicitly re-enabled by the repository owner."
+}
