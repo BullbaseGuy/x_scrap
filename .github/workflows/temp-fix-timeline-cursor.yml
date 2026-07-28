@@ -84,11 +84,8 @@ jobs:
 
           test_path = Path('tests/test_service.py')
           tests = test_path.read_text(encoding='utf-8')
-          import_old = 'from datetime import UTC, datetime, timedelta\n'
-          import_new = 'import json\nfrom datetime import UTC, datetime, timedelta\n'
-          if import_old not in tests:
-              raise SystemExit('test_service datetime import anchor missing')
-          tests = tests.replace(import_old, import_new, 1)
+          if not tests.startswith('import json\n'):
+              tests = 'import json\n' + tests
 
           test_block = r'''
 
@@ -162,6 +159,7 @@ async def test_timeline_empty_page_guard_is_explicitly_truncated_and_search_stay
           test_path.write_text(tests + test_block, encoding='utf-8')
 
           Path('.github/workflows/temp-fix-timeline-cursor.yml').unlink()
+          Path('.github/workflows/temp-diagnose-timeline-cursor.yml').unlink(missing_ok=True)
           PY
       - name: Install deterministic development dependencies
         run: python -m pip install -e '.[dev]'
