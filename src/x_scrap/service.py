@@ -183,7 +183,10 @@ class UserExportService:
                     raise ValueError("start must precede the fixed cutoff")
                 self.db.update_job(job_id, user_id=user.user_id, start_at=iso_utc(start))
 
-                timeline_suspect_empty = await self._collect_timeline(
+                (
+                    timeline_suspect_empty,
+                    timeline_truncated_sources,
+                ) = await self._collect_timeline(
                     job_id,
                     user.user_id,
                     include_retweets,
@@ -235,6 +238,12 @@ class UserExportService:
                         *coverage.get("warnings", []),
                         "recent timeline endpoints returned no pages; historical search supplied the observable records",
                     ]
+                if timeline_truncated_sources:
+                    coverage["warnings"] = [
+                        *coverage.get("warnings", []),
+                        "recent timeline pagination stopped after the upstream empty-page guard while a cursor remained; exact historical search remained the coverage authority",
+                    ]
+                    coverage["timeline_truncated_sources"] = timeline_truncated_sources
                 coverage_status = coverage["status"]
                 final_status = (
                     JobStatus.COMPLETED
@@ -340,7 +349,7 @@ class UserExportService:
         start: datetime,
         cutoff: datetime,
         statuses_count: int | None,
-    ) -> bool:
+    ) -> tuple[bool, list[str]]:
         sources = [
             (
                 "user_tweets",
@@ -353,6 +362,7 @@ class UserExportService:
                 self.adapter.iter_user_tweet_and_reply_pages,
             ),
         ]
+        truncated_sources: list[str] = []
         for source, scope_key, factory in sources:
             recovery = RecoveryBudget(self.retry_policy)
             while True:
@@ -361,6 +371,10 @@ class UserExportService:
                     break
                 if scope["state"] == "EXHAUSTED":
                     self.pages.complete_scope(job_id, scope_key)
+                    break
+                if scope["state"] == "LIMIT_REACHED":
+                    if scope.get("last_error") == "UPSTREAM_TIMELINE_CURSOR_REMAINS":
+                        truncated_sources.append(source)
                     break
 
                 stats = self.pages.scope_stats(job_id, scope_key)
@@ -384,12 +398,19 @@ class UserExportService:
                         start=start,
                         cutoff=cutoff,
                     )
-                    self._finish_scope_after_stream(
+                    cursor_remains_reason = (
+                        "CONFIGURED_TIMELINE_LIMIT"
+                        if limit > 0
+                        else "UPSTREAM_TIMELINE_CURSOR_REMAINS"
+                    )
+                    exhausted = self._finish_scope_after_stream(
                         job_id,
                         scope_key,
-                        allow_limit=limit > 0,
-                        limit_reason="CONFIGURED_TIMELINE_LIMIT",
+                        allow_limit=True,
+                        limit_reason=cursor_remains_reason,
                     )
+                    if not exhausted and limit < 0:
+                        truncated_sources.append(source)
                     break
                 except (RateLimited, TransientUpstreamError) as exc:
                     self.pages.fail_scope(job_id, scope_key, type(exc).__name__)
@@ -405,12 +426,19 @@ class UserExportService:
 
             final_stats = self.pages.scope_stats(job_id, scope_key)
             final_scope = self.pages.get_scope(job_id, scope_key)
+            final_reason = final_scope.get("last_error") if final_scope else None
+            event_type = (
+                "TIMELINE_SOURCE_TRUNCATED"
+                if final_reason == "UPSTREAM_TIMELINE_CURSOR_REMAINS"
+                else "TIMELINE_SOURCE_COMPLETE"
+            )
             self.db.add_event(
                 job_id,
-                "TIMELINE_SOURCE_COMPLETE",
+                event_type,
                 {
                     "source": source,
                     "state": final_scope["state"] if final_scope else "UNKNOWN",
+                    "reason": final_reason,
                     "pages": final_stats["page_count"],
                     "count": final_stats["accepted_count"],
                 },
@@ -427,7 +455,7 @@ class UserExportService:
                 "TIMELINE_EMPTY_SUSPECT",
                 {"user_id": user_id, "reported_statuses_count": statuses_count},
             )
-        return suspect_empty
+        return suspect_empty, sorted(set(truncated_sources))
 
     async def _collect_search_windows(
         self,
